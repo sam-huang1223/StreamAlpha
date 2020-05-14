@@ -1,0 +1,10 @@
+# don't track contents of these folders
+data/robintrack
+
+# don't track senstitive files
+config.ini
+
+# don't track these extensions
+**/*.DS_Store
+
+__pycache__
