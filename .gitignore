@@ -1,5 +1,7 @@
 # don't track contents of these folders
 data/robintrack
+data/historic
+data/twitter
 
 # don't track senstitive files
 config.ini
@@ -7,4 +9,4 @@ config.ini
 # don't track these extensions
 **/*.DS_Store
 
-__pycache__
+**/__pycache__
