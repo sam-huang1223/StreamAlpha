@@ -2,7 +2,7 @@
 data/robintrack
 data/historic
 data/twitter
-temp/
+scratch/
 
 # don't track senstitive files
 config.ini
