@@ -2,11 +2,11 @@
 data/robintrack
 data/historic
 data/twitter
+temp/
 
 # don't track senstitive files
 config.ini
 
 # don't track these extensions
 **/*.DS_Store
-
 **/__pycache__

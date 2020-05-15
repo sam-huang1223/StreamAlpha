@@ -2,7 +2,6 @@ from ib_insync import *
 
 from pymongo import MongoClient
 
-import os
 import configparser
 
 config = configparser.ConfigParser()
