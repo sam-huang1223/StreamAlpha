@@ -1,41 +1,17 @@
 from ib_insync import *
 
-from pymongo import MongoClient
+import requests
 
-import configparser
+r = requests.post("http://localhost:5000/stock/AAL", data={'ID': "1234567"})
+print(r.status_code, r.reason)
+print(r.text)
 
-config = configparser.ConfigParser()
+#ib = IB()
+#ib.connect('127.0.0.1', 7496, clientId=1)
 
-# config.ini contains sensitive credentials
-with open('config.ini') as f:
-    config.read_file(f)
+#ib.disconnect()
 
-MONGODB_ATLAS_PASSWORD = config['MongoDB Atlas']['MONGODB_ATLAS_PASSWORD']
-
-client = MongoClient('mongodb+srv://streamalpha:{password}@streamalpha-o9mip.mongodb.net/test?retryWrites=true&w=majority'.format(password=MONGODB_ATLAS_PASSWORD))
-
-instruments = client.instruments
-
-"""
-
-option = {
-    'ticker' : None,  # parent
-    'expiry_date' : None,
-    'strike' : None,
-    'type' : None,
-    'implied_vol' : None,
-    # greeks
-}
-instruments.options.insert_one(option)
-
-# store historic data in 
-
-"""
-
-ib = IB()
-ib.connect('127.0.0.1', 7496, clientId=1)
-
-
+# store historic data in pystore
 """
 scanner_nasdaq = ScannerSubscription(
     instrument='STK', 
@@ -81,8 +57,6 @@ chains = util.df(chains)
 
 print(chains)
 """
-
-ib.disconnect()
 
 
 
