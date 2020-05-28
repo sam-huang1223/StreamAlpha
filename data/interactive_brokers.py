@@ -1,6 +1,10 @@
 import ib_insync
 
+import sqlite3
 import configparser
+
+from .models import Trade
+from .schema import db_creation_script, insert_trade
 
 """
 import requests
@@ -42,9 +46,24 @@ class IBKR:
             trades.save(savepath)
             ib_insync.flexreport._logger.info('Statement has been saved.')
 
-    def play(self):
-        report = ib_insync.FlexReport(path='temp/data/interactive_brokers/test1.xml')
-        print(report.topics())
+    def parse_tradelog(self, loadpath, db_url):
+        report = ib_insync.FlexReport(path=loadpath)
+
+        conn = sqlite3.connect(db_url)  # can switch to ':memory:'
+
+        # run creation script if DB is empty
+        
+        if not conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
+            db_creation_script(conn)
+        
+        for trade in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
+            insert_trade(conn, Trade(trade))
+
+        conn.commit()
+
+        conn.close()
+
+
 
 """
     app = TestApp("127.0.0.1", 4001, 1)

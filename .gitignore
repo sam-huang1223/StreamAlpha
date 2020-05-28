@@ -6,6 +6,7 @@ scratch/
 
 # don't track senstitive files
 config.ini
+sqlite.db
 
 # don't track these extensions
 **/*.DS_Store
