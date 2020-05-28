@@ -1,8 +1,8 @@
 # don't track contents of these folders
-data/robintrack
-data/historic
-data/twitter
-scratch/
+data/robintrack/**
+data/historic/**
+data/twitter/**
+scratch/**
 
 # don't track senstitive files
 config.ini

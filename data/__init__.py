@@ -1,1 +1,1 @@
-from .interactive_brokers import IBKR
+from .IBKR import IBKR
