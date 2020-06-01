@@ -4,8 +4,8 @@ import sqlite3
 import configparser
 
 
-from .schema import db_creation_script, insert_trade
-from .models import Trade
+from .schema import db_creation_script, insert_trade, insert_dividend
+from .models import Trade, Dividend
 
 """
 import requests
@@ -22,6 +22,7 @@ with open('config.ini') as f:
 
 PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
+DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
 
 
 class IBKR:
@@ -49,8 +50,13 @@ class IBKR:
         # run creation script if DB is empty
         if not self.conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
             db_creation_script(self.conn)
+            print('Loading tradelog...')
             self.query_flexreport('420983', savepath=TRADELOG_PATH)
             self.parse_tradelog(loadpath=TRADELOG_PATH)
+
+            print('Loading dividend history...')
+            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
 
     def __del__(self):
         self.conn.close()
@@ -85,6 +91,7 @@ class IBKR:
             ib_insync.flexreport._logger.info('Statement has been saved.')
 
     def parse_tradelog(self, loadpath):
+        print('Parsing tradelog...')
         report = ib_insync.FlexReport(path=loadpath)
         
         # TODO convert all mentions of Trade to Order
@@ -93,6 +100,14 @@ class IBKR:
 
         self.conn.commit()
 
+    def parse_dividend_history(self, loadpath):
+        print('Parsing dividend history...')
+        dividend_history = ib_insync.FlexReport(path=loadpath)
+        
+        for dividend in dividend_history.extract('ChangeInDividendAccrual'):
+            insert_dividend(self.conn, Dividend(dividend))
+        
+        self.conn.commit()
 
 
 """

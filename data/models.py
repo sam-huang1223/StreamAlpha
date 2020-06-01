@@ -77,10 +77,10 @@ class Cash:
 
 class Dividend:
     def __init__(self, dividend):
-        self.dividend_id = dividend.symbol + ' ' + dividend.exDate
+        self.dividend_id = dividend.symbol + ' ' + str(dividend.exDate)
         self.stock_id = dividend.symbol
-        self.ex_date = datetime.datetime.strptime(dividend.exDate, '%Y%m%d').date()
-        self.pay_date = datetime.datetime.strptime(dividend.payDate, '%Y%m%d').date()
+        self.ex_date = datetime.datetime.strptime(str(dividend.exDate), '%Y%m%d').date()
+        self.pay_date = datetime.datetime.strptime(str(dividend.payDate), '%Y%m%d').date()
         self.quantity = int(dividend.quantity)
         self.tax = float(dividend.tax)
         self.amount = float(dividend.grossRate)

@@ -30,7 +30,9 @@ class Datasource:
     def __init__(self, force_update_tradelog=False, force_update_dividend_history=False):
         # initialize connection to IBKR
         self.IBKR = IBKR()
+        self._setup(force_update_tradelog, force_update_dividend_history)
 
+    def _setup(self, force_update_tradelog, force_update_dividend_history):
         print('Initializing Datasource...')
         # update tradelog if last update was more than 1 day ago
         try:
@@ -59,17 +61,17 @@ class Datasource:
             dividend_history_datetime = datetime.now()
 
         if (datetime.now() - tradelog_datetime).days > 0 or force_update_tradelog:
-            # get the updated tradelog
+            # parse the updated tradelog
             self.IBKR.query_flexreport('420983', savepath=TRADELOG_PATH)
-            # parse the differentials into the project DB
+            # insert the differentials into the project DB
             print('Updating Tradelog...')
             self._update_tradelog_db(last_updated=tradelog_datetime)
         print('Tradelog is up-to-date')
 
         if (datetime.now() - dividend_history_datetime).days > 0 or force_update_dividend_history:
-            # get the updated tradelog
+            # parse the updated dividend history
             self.IBKR.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
-            # parse the differentials into the project DB
+            # insert the differentials into the project DB
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=dividend_history_datetime)
         print('Dividend History is up-to-date')
@@ -94,6 +96,7 @@ class Datasource:
         last_dividend_history = ET.parse(DIVIDEND_HISTORY_PATH)
 
         # filter for new dividends to insert into the database
+
         for record in last_dividend_history.iter('ChangeInDividendAccrual'):
             if datetime.strptime(record.attrib['exDate'], '%Y%m%d').date() >= last_updated.date():
                 dividend = SimpleNamespace(**record.attrib)
@@ -102,7 +105,7 @@ class Datasource:
 
         self.IBKR.conn.commit()
 
-    def get_security_historical(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=False):
+    def get_security_historical(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
         """
 
         Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
@@ -130,6 +133,9 @@ class Datasource:
                 }
             )
             df = df.drop(columns=['average', 'barCount'])
+
+            # TODO insert into price history DB if it is not there (e.g. max date in DB entries is < df.min_date)
+
             schema.insert_price_history('Price_History_Daily', self.IBKR.conn, df)
         return df
 
