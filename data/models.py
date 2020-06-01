@@ -5,28 +5,29 @@ class Trade:
         self.trade_type = trade.buySell
         self.security_type = trade.assetCategory
         self.currency = trade.currency
-        self.fxRateToBase = trade.fxRateToBase
+        self.fxRateToBase = float(trade.fxRateToBase)
 
         self.execution_time = datetime.datetime.strptime(str(trade.dateTime), '%Y%m%d;%H%M%S')
-        self.settle_date = datetime.datetime.strptime(str(trade.settleDateTarget), '%Y%m%d')
+        self.settle_date = datetime.datetime.strptime(str(trade.settleDateTarget), '%Y%m%d').date()
 
-        self.quantity = trade.quantity
+        self.quantity = int(trade.quantity)
 
         #self.trade_id = trade.tradeID
         #self.transaction_id = trade.transactionID
         self.order_id = trade.ibOrderID
 
-        self.commission = trade.ibCommission
+        self.commission = float(trade.ibCommission)
 
-        self.price = trade.tradePrice
-        self.total = trade.tradeMoney
+        self.price = float(trade.tradePrice)
+        self.total = float(trade.tradeMoney)
         self.base_total = self.fxRateToBase * self.total
 
-        if self.trade_type == 'SELL':
-            self.total_cost_basis = trade.cost
-            self.pnl_realized = trade.fifoPnlRealized
-        else:
+        self.total_cost_basis = float(trade.cost)
+        self.pnl_realized = float(trade.fifoPnlRealized)
+
+        if self.total_cost_basis == '':
             self.total_cost_basis = None
+        if self.pnl_realized == '':
             self.pnl_realized = None
 
         if self.security_type == 'STK':
@@ -43,6 +44,8 @@ class Stock:
         self.ticker = trade.symbol
         self.description = trade.description
         self.ib_id = trade.conid
+        self.isin = trade.isin
+        self.exchange = trade.listingExchange
 
 class Option:
 
@@ -52,10 +55,12 @@ class Option:
 
         self.underlying = trade.underlyingSymbol
         self.underlying_ib_id = trade.underlyingConid
+        self.underlying_isin = trade.underlyingSecurityID
+        self.underlying_exchange = trade.underlyingListingExchange
 
         self.type = trade.putCall
         self.strike = trade.strike
-        self.expiry = datetime.datetime.strptime(str(trade.expiry), '%Y%m%d')
+        self.expiry = datetime.datetime.strptime(str(trade.expiry), '%Y%m%d').date()
 
 class Cash:
     def __init__(self, trade):
@@ -69,3 +74,15 @@ class Cash:
         elif trade.buySell == 'SELL':
             self.currency_to = trade.symbol.split('.')[1]
             self.currency_from = trade.symbol.split('.')[0]
+
+class Dividend:
+    def __init__(self, dividend):
+        self.dividend_id = dividend.symbol + ' ' + dividend.exDate
+        self.stock_id = dividend.symbol
+        self.ex_date = datetime.datetime.strptime(dividend.exDate, '%Y%m%d').date()
+        self.pay_date = datetime.datetime.strptime(dividend.payDate, '%Y%m%d').date()
+        self.quantity = int(dividend.quantity)
+        self.tax = float(dividend.tax)
+        self.amount = float(dividend.grossRate)
+        self.total = float(dividend.grossAmount)
+        self.net_total = float(dividend.netAmount)

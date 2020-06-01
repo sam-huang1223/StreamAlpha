@@ -3,8 +3,9 @@ import ib_insync
 import sqlite3
 import configparser
 
-from .models import Trade
+
 from .schema import db_creation_script, insert_trade
+from .models import Trade
 
 """
 import requests
@@ -14,19 +15,56 @@ print(r.status_code, r.reason)
 print(r.text)
 """
 
+# admin
+config = configparser.ConfigParser()
+with open('config.ini') as f:
+    config.read_file(f)
+
+PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
+TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
+
+
 class IBKR:
     def __init__(self):
         self._setup()
+        self.connected = False
 
     def _setup(self):
         # admin
         config = configparser.ConfigParser()
 
         # config.ini contains sensitive credentials
-        with open('config.ini') as f:
+        with open('credentials.ini') as f:
             config.read_file(f)
         self.IBKR_FLEXREPORT_TOKEN = str(config['IB API']['IBKR_FLEXREPORT_TOKEN'])
 
+        # initialize instance of client
+        self.client = ib_insync.IB()
+
+        if PROJECT_DB_PATH:
+            self.conn = sqlite3.connect(PROJECT_DB_PATH)
+        else:
+            self.conn = sqlite3.connect(':memory:')
+
+        # run creation script if DB is empty
+        if not self.conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
+            db_creation_script(self.conn)
+            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            self.parse_tradelog(loadpath=TRADELOG_PATH)
+
+    def __del__(self):
+        self.conn.close()
+        self.disconnect()
+
+    def connect(self, read_only):
+        self.client.connect('127.0.0.1', 7496, clientId=1, readonly=read_only)
+        self.connected = True
+        print('Connected to IB TWS')
+
+    def disconnect(self):
+        self.client.disconnect()
+        self.connected = False
+        print('Disconnected from IB TWS')
 
     def query_flexreport(self, queryID, savepath=None):
         """
@@ -46,22 +84,14 @@ class IBKR:
             trades.save(savepath)
             ib_insync.flexreport._logger.info('Statement has been saved.')
 
-    def parse_tradelog(self, loadpath, db_url):
+    def parse_tradelog(self, loadpath):
         report = ib_insync.FlexReport(path=loadpath)
-
-        conn = sqlite3.connect(db_url)  # can switch to ':memory:'
-
-        # run creation script if DB is empty
         
-        if not conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
-            db_creation_script(conn)
-        
-        for trade in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
-            insert_trade(conn, Trade(trade))
+        # TODO convert all mentions of Trade to Order
+        for order in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
+            insert_trade(self.conn, Trade(order))
 
-        conn.commit()
-
-        conn.close()
+        self.conn.commit()
 
 
 
@@ -80,50 +110,14 @@ class IBKR:
     tickerid = app.start_getting_IB_market_data(resolved_ibcontract)
 
     time.sleep(30)
-    """
-
-#ib = IB()
-#ib.connect('127.0.0.1', 7496, clientId=1)
-
-#ib.disconnect()
-
-# store historic data in pystore
-"""
-scanner_nasdaq = ScannerSubscription(
-    instrument='STK', 
-    locationCode='STK.NASDAQ', 
-    scanCode='HIGH_OPT_IMP_VOLAT')
-
-nasdaq_results = ib.reqScannerData(scanner_nasdaq)
-
-print(f'{len(nasdaq_results)} results, first one:')
-print(nasdaq_results[0])
-print(nasdaq_results[1])
-
-print()
-
-scanner_nyse = ScannerSubscription(
-    instrument='STK', 
-    locationCode='STK.NYSE', 
-    scanCode='HIGH_OPT_IMP_VOLAT')
-
-nyse_results = ib.reqScannerData(scanner_nyse)
-
-print(f'{len(nyse_results)} results, first one:')
-print(nyse_results[0])
-print(nyse_results[1])
 """
 
-"""
-# can't use ib scanner - results capped at 50 items without market data subscription
-# scanner from https://robintrack.net/
 
+"""
 stock = Stock('SUPV', '', 'USD')
 out = ib.reqContractDetails(stock)
 
 print(out)
-
-
 
 chains = ib.reqSecDefOptParams(, '', 'STK', 233587209)
 
@@ -133,31 +127,3 @@ chains = util.df(chains)
 
 print(chains)
 """
-
-
-
-"""
-contract = Forex('EURUSD')
-bars = ib.reqHistoricalData(
-    contract, endDateTime='', durationStr='30 D',
-    barSizeSetting='1 hour', whatToShow='MIDPOINT', useRTH=True)
-
-# convert to pandas dataframe:
-df = util.df(bars)
-print(df)
-"""
-
-"""
-option = Option('EOE', '20171215', 490, 'P', 'FTA', multiplier=100)
-
-calc = ib.calculateImpliedVolatility(
-    option, optionPrice=6.1, underPrice=525))
-print(calc)
-
-calc = ib.calculateOptionPrice(
-    option, volatility=0.14, underPrice=525))
-print(calc)
-"""
-
-if __name__ == '__main__':
-    run()

@@ -5,8 +5,8 @@ data/twitter/**
 scratch/**
 
 # don't track senstitive files
-config.ini
-sqlite.db
+credentials.ini
+**/*.db
 
 # don't track these extensions
 **/*.DS_Store

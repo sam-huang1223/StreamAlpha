@@ -1,13 +1,13 @@
-from data import IBKR
+from dashboard import datasource
+
 
 def pipeline():
-    # initialize connection to IBKR
-    client = IBKR()
-
-    # download tradelog from IBKR (should do this once a day at end of trading day (exact time TBD))
-    #client.query_flexreport('420983', savepath='scratch/data/interactive_brokers/test1.xml')
-
-    # extract tradelog records into SQL Database (see data/models.py and data/schema.py for schema definitions)
-    client.parse_tradelog('scratch/data/interactive_brokers/test1.xml', "data/sqlite.db")
+    pass
 
 pipeline()
+
+ds = datasource.Datasource()
+ds.IBKR.connect(read_only=True)
+#print(ds.IBKR.client.positions())
+#print(ds.get_security_historical('360310574', durationStr='2 W', barSizeSetting='1 hour', whatToShow='TRADES', useRTH=True, updateDB=False))
+

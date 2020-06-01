@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS Trade (
                                     security_type VARCHAR(8) NOT NULL CHECK (security_type IN ('STK','OPT','CASH')),
                                     quantity INT NOT NULL,
 
+                                    stock_id VARCHAR(16),  -- not null if security_type is "STK"
+                                    option_id VARCHAR(32),  -- not null if security_type is "OPT"
+
                                     currency CHAR(3) NOT NULL,
                                     fxRateToBase DECIMAL NOT NULL,
 
@@ -21,9 +24,6 @@ CREATE TABLE IF NOT EXISTS Trade (
                                     total_cost_basis DECIMAL,
                                     pnl_realized DECIMAL,
 
-                                    stock_id VARCHAR(16),  -- not null if security_type is "STK"
-                                    option_id VARCHAR(32),  -- not null if security_type is "OPT"
-
                                     -- below columns are not null if security_type is "CASH" (e.g. currency exchange)
                                     currency_to VARCHAR(4),
                                     currency_from VARCHAR(4),
@@ -38,6 +38,8 @@ CREATE_TABLE_STOCK =  """
 CREATE TABLE IF NOT EXISTS Stock (
                                     stock_id VARCHAR(16) PRIMARY KEY, -- symbol
                                     ib_id VARCHAR(16) NOT NULL,
+                                    isin VARCHAR(32) NOT NULL,
+                                    exchange VARCHAR(16) NOT NULL,
                                     description TEXT
                                     );
 """
@@ -55,12 +57,66 @@ CREATE TABLE IF NOT EXISTS Option (
                                     );
 """
 
+CREATE_TABLE_DIVIDEND_HISTORY = """
+CREATE TABLE IF NOT EXISTS Dividend_History (
+                                    dividend_id VARCHAR(32) PRIMARY KEY,  -- Ticker + Ex Date
+                                    stock_id VARCHAR(16) NOT NULL, -- ticker
+                                    ex_date DATE NOT NULL,
+                                    pay_date DATE NOT NULL,
+                                    quantity INT NOT NULL,
+                                    tax DECIMAL NOT NULL,
+                                    amount DECIMAL NOT NULL,
+                                    total DECIMAL NOT NULL,
+                                    net_total DECIMAL NOT NULL,
+                                    FOREIGN KEY (stock_id) REFERENCES Stock (stock_id) 
+                                    );
+"""
+
+CREATE_TABLE_PRICE_HISTORY_DAILY = """
+CREATE TABLE IF NOT EXISTS Price_History_Daily (
+                                    date DATE NOT NULL,
+                                    ib_id VARCHAR(16) NOT NULL,
+                                    stock_id VARCHAR(16) NOT NULL,
+                                    open DECIMAL NOT NULL,
+                                    close DECIMAL NOT NULL,
+                                    high DECIMAL NOT NULL,
+                                    low DECIMAL NOT NULL,
+                                    volume DECIMAL NOT NULL,
+                                    FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
+                                    PRIMARY KEY (date, ib_id)
+                                    );
+"""
+
+CREATE_TABLE_PRICE_HISTORY_HOURLY = """
+CREATE TABLE IF NOT EXISTS Price_History_Hourly (
+                                    date DATETIME NOT NULL,
+                                    ib_id VARCHAR(16) NOT NULL,
+                                    stock_id VARCHAR(16) NOT NULL,
+                                    open DECIMAL NOT NULL,
+                                    close DECIMAL NOT NULL,
+                                    high DECIMAL NOT NULL,
+                                    low DECIMAL NOT NULL,
+                                    volume DECIMAL NOT NULL,
+                                    FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
+                                    PRIMARY KEY (date, ib_id)
+                                    );
+"""
+
+
 def db_creation_script(conn):
     c = conn.cursor()
+
+    print('Initializing the StreamAlpha database - \n') # convert to log
 
     c.execute(CREATE_TABLE_STOCK)
     c.execute(CREATE_TABLE_OPTION)
     c.execute(CREATE_TABLE_TRADE)
+    c.execute(CREATE_TABLE_DIVIDEND_HISTORY)
+    c.execute(CREATE_TABLE_PRICE_HISTORY_DAILY)
+    c.execute(CREATE_TABLE_PRICE_HISTORY_HOURLY)
+
+
+    print('Setup complete! All tables have been created') # convert to log
 
     conn.commit()
 
@@ -86,7 +142,7 @@ def insert_trade(conn, trade):
         c.execute(sql, params)
 
         if not c.execute("SELECT * FROM Stock WHERE stock_id = '{}'".format(trade.security.ticker)).fetchall():
-            insert_stock(c, trade.security.ticker, trade.security.ib_id, description=trade.security.description)
+            insert_stock(c, trade.security.ticker, trade.security.ib_id, trade.security.isin, trade.security.exchange, description=trade.security.description)
 
         print(
             "Successfully parsed one STOCK {trade_type} of {symbol} on {date}".format(
@@ -108,7 +164,7 @@ def insert_trade(conn, trade):
 
         # insert stock_id and ib_id into stock if it does not exist
         if not c.execute("SELECT * FROM Stock WHERE stock_id = '{}'".format(trade.security.underlying)).fetchall():
-            insert_stock(c, trade.security.underlying, trade.security.underlying_ib_id)
+            insert_stock(c, trade.security.underlying, trade.security.underlying_ib_id, trade.security.underlying_isin, trade.security.underlying_exchange)
 
         if not c.execute("SELECT * FROM Option WHERE option_id = '{}'".format(trade.security.name)).fetchall():
             insert_option(c, trade)
@@ -140,11 +196,11 @@ def insert_trade(conn, trade):
             ) # TODO convert print statement to log
 
 
-def insert_stock(c, ticker, ib_id, description=None):
-    sql = """ INSERT INTO Stock(stock_id, ib_id, description)
-              VALUES(?,?,?) """
+def insert_stock(c, ticker, ib_id, isin, exchange, description=None):
+    sql = """ INSERT INTO Stock(stock_id, ib_id, isin, exchange, description)
+              VALUES(?,?,?,?,?) """
 
-    params = (ticker, ib_id, description)
+    params = (ticker, ib_id, isin, exchange, description)
     c.execute(sql, params)
 
 def insert_option(c, trade):
@@ -155,6 +211,25 @@ def insert_option(c, trade):
 
     params = (option.name, option.ib_id, option.underlying, option.type, option.strike, option.expiry)
     c.execute(sql, params)
+
+
+def insert_dividend(c, dividend):
+    sql = """ INSERT INTO Dividend_History(dividend_id, stock_id, ex_date, pay_date, quantity, tax, amount, total, net_total)
+              VALUES(?,?,?,?,?,?,?,?,?) """
+
+    params = (dividend.dividend_id, dividend.stock_id, dividend.ex_date, dividend.pay_date, dividend.quantity, dividend.tax, dividend.amount, dividend.total, dividend.net_total)
+    c.execute(sql, params)
+
+    print(
+        "Successfully parsed {symbol}'s dividend of {net_total} to be paid on {pay_date}".format(
+                symbol=dividend.stock_id,
+                net_total=dividend.net_total,
+                pay_date=dividend.pay_date,
+            )
+    ) # TODO convert print statement to log
+
+def insert_price_history(whichTable, conn, prices_df):
+    prices_df.to_sql(whichTable, con=conn, if_exists='append', index=False)
 
 
 # sqlite_master is equivalent of MySQL's information_schema
