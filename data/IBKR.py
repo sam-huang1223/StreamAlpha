@@ -105,7 +105,10 @@ class IBKR:
         dividend_history = ib_insync.FlexReport(path=loadpath)
         
         for dividend in dividend_history.extract('ChangeInDividendAccrual'):
-            insert_dividend(self.conn, Dividend(dividend))
+            div = Dividend(dividend)
+            # only consider accrued dividend postings (i.e. not reversals on paid out dividends) <- assumes dividends don't get cancelled
+            if div.code == 'Po':
+                insert_dividend(self.conn, div)
         
         self.conn.commit()
 

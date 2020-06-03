@@ -86,3 +86,4 @@ class Dividend:
         self.amount = float(dividend.grossRate)
         self.total = float(dividend.grossAmount)
         self.net_total = float(dividend.netAmount)
+        self.code = dividend.code

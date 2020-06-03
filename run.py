@@ -9,5 +9,12 @@ pipeline()
 ds = datasource.Datasource()
 ds.IBKR.connect(read_only=True)
 #print(ds.IBKR.client.positions())
-#print(ds.get_security_historical('360310574', durationStr='2 W', barSizeSetting='1 hour', whatToShow='TRADES', useRTH=True, updateDB=False))
+print(ds.get_security_historical(
+    '360310574', 
+    durationStr='3 W', 
+    barSizeSetting='1 min', 
+    whatToShow='TRADES', 
+    useRTH=True, 
+    #endDateTime='20190927 23:59:59', 
+    updateDB=True))
 

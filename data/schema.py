@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS Dividend_History (
                                     );
 """
 
-CREATE_TABLE_PRICE_HISTORY_DAILY = """
-CREATE TABLE IF NOT EXISTS Price_History_Daily (
+CREATE_TABLE_PRICE_HISTORY_DAY = """
+CREATE TABLE IF NOT EXISTS Price_History_Day (
                                     date DATE NOT NULL,
                                     ib_id VARCHAR(16) NOT NULL,
                                     stock_id VARCHAR(16) NOT NULL,
@@ -87,9 +87,27 @@ CREATE TABLE IF NOT EXISTS Price_History_Daily (
                                     );
 """
 
-CREATE_TABLE_PRICE_HISTORY_HOURLY = """
-CREATE TABLE IF NOT EXISTS Price_History_Hourly (
+CREATE_TABLE_PRICE_HISTORY_HOUR = """
+CREATE TABLE IF NOT EXISTS Price_History_Hour (
                                     date DATETIME NOT NULL,
+                                    hour INT NOT NULL,
+                                    ib_id VARCHAR(16) NOT NULL,
+                                    stock_id VARCHAR(16) NOT NULL,
+                                    open DECIMAL NOT NULL,
+                                    close DECIMAL NOT NULL,
+                                    high DECIMAL NOT NULL,
+                                    low DECIMAL NOT NULL,
+                                    volume DECIMAL NOT NULL,
+                                    FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
+                                    PRIMARY KEY (date, ib_id)
+                                    );
+"""
+
+CREATE_TABLE_PRICE_HISTORY_MINUTE = """
+CREATE TABLE IF NOT EXISTS Price_History_Minute (
+                                    date DATETIME NOT NULL,
+                                    hour INT NOT NULL,
+                                    minute INT NOT NULL,
                                     ib_id VARCHAR(16) NOT NULL,
                                     stock_id VARCHAR(16) NOT NULL,
                                     open DECIMAL NOT NULL,
@@ -112,9 +130,9 @@ def db_creation_script(conn):
     c.execute(CREATE_TABLE_OPTION)
     c.execute(CREATE_TABLE_TRADE)
     c.execute(CREATE_TABLE_DIVIDEND_HISTORY)
-    c.execute(CREATE_TABLE_PRICE_HISTORY_DAILY)
-    c.execute(CREATE_TABLE_PRICE_HISTORY_HOURLY)
-
+    c.execute(CREATE_TABLE_PRICE_HISTORY_DAY)
+    c.execute(CREATE_TABLE_PRICE_HISTORY_HOUR)
+    c.execute(CREATE_TABLE_PRICE_HISTORY_MINUTE)
 
     print('Setup complete! All tables have been created') # convert to log
 

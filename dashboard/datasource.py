@@ -77,7 +77,6 @@ class Datasource:
         print('Dividend History is up-to-date')
         
         print('Datasource established')
-        # TODO create function to only parse and append new price data to stocks / options DB
 
     def _update_tradelog_db(self, last_updated):
         last_tradelog = ET.parse(TRADELOG_PATH)
@@ -127,16 +126,39 @@ class Datasource:
         if updateDB:
             df['stock_id'] = contract.symbol
             df['ib_id'] = contract_id
-            df = df.rename(
-                columns={
-                    'date': 'datetime',
-                }
-            )
+            df = df.astype({"date": str})
             df = df.drop(columns=['average', 'barCount'])
 
-            # TODO insert into price history DB if it is not there (e.g. max date in DB entries is < df.min_date)
+            sql_get_existing_records = """
+                SELECT date 
+                FROM {table}
+                WHERE 
+                ib_id = '{ib_id}'
+                    AND 
+                date BETWEEN '{start_date}' AND '{end_date}' 
+                ORDER BY date ASC
+            """
 
-            schema.insert_price_history('Price_History_Daily', self.IBKR.conn, df)
+            if 'day' in barSizeSetting:
+                price_history_table = 'Price_History_Day'
+            elif 'hour' in barSizeSetting:
+                price_history_table = 'Price_History_Hour'
+                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
+            elif 'min' in barSizeSetting:
+                price_history_table = 'Price_History_Minute'
+                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
+                df['minute'] = df['date'].str.split(" ").str[1].str.split(':').str[1]
+            else:
+                raise ValueError("price data with bar size of {} cannot be inserted into the database".format(barSizeSetting))
+        
+            start_date = df['date'].min()
+            end_date = df['date'].max()
+            sql_execute = sql_get_existing_records.format(table=price_history_table, ib_id = contract_id, start_date=start_date, end_date=end_date)
+            
+            dates_already_in_db = [date[0] for date in self.IBKR.conn.cursor().execute(sql_execute).fetchall()]
+            df = df[~df['date'].isin(dates_already_in_db)]
+            schema.insert_price_history(price_history_table, self.IBKR.conn, df)
+
         return df
 
     """
