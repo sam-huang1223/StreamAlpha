@@ -2,10 +2,15 @@ import ib_insync
 
 import sqlite3
 import configparser
+import xml.etree.ElementTree as ET
 
+from datetime import datetime
+from types import SimpleNamespace
 
-from .schema import db_creation_script, insert_trade, insert_dividend
-from .models import Trade, Dividend
+from data import models
+from data import schema
+
+import utils.sql_queries as queries
 
 """
 import requests
@@ -31,6 +36,8 @@ class IBKR:
         self.connected = False
 
     def _setup(self):
+        print('Initializing IBKR Connection...\n')
+
         # admin
         config = configparser.ConfigParser()
 
@@ -49,7 +56,7 @@ class IBKR:
 
         # run creation script if DB is empty
         if not self.conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
-            db_creation_script(self.conn)
+            schema.db_creation_script(self.conn)
             print('Loading tradelog...')
             self.query_flexreport('420983', savepath=TRADELOG_PATH)
             self.parse_tradelog(loadpath=TRADELOG_PATH)
@@ -57,6 +64,48 @@ class IBKR:
             print('Loading dividend history...')
             self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
             self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
+
+        # update tradelog if last update was more than 1 day ago
+        try:
+            print('Checking Tradelog...')
+            doc = ET.parse(TRADELOG_PATH)
+
+            tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
+            tradelog_datetime = datetime.strptime(tradelog_datetime_str, '%Y%m%d;%H%M%S')
+        except OSError:
+            # create tradelog if it doesn't exist
+            print('Generating Tradelog...\n')
+            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            tradelog_datetime = datetime.now()
+
+        # update dividend history if last update was more than 1 day ago
+        try:
+            print('Checking Dividend History...')
+            doc = ET.parse(DIVIDEND_HISTORY_PATH)
+
+            dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
+            dividend_history_datetime = datetime.strptime(dividend_history_datetime_str, '%Y%m%d;%H%M%S')
+        except OSError:
+            # create dividend history if it doesn't exist
+            print('Generating Dividend History...\n')
+            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            dividend_history_datetime = datetime.now()
+
+        # if there are new entries, parse the updated tradelog into db
+        if (datetime.now() - tradelog_datetime).days > 0:
+            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            print('Updating Tradelog...')
+            self._update_tradelog_db(last_updated=tradelog_datetime)
+        print('Tradelog is up-to-date\n')
+        
+        # if there are new entries, parse the updated dividend history in db
+        if (datetime.now() - dividend_history_datetime).days > 0:
+            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            print('Updating Dividend History...')
+            self._update_dividend_history_db(last_updated=dividend_history_datetime)
+        print('Dividend History is up-to-date\n')
+        
+        print('IBKR Connection Successfully Established\n')
 
     def __del__(self):
         self.conn.close()
@@ -72,23 +121,21 @@ class IBKR:
         self.connected = False
         print('Disconnected from IB TWS')
 
-    def query_flexreport(self, queryID, savepath=None):
+    def query_flexreport(self, queryID, savepath):
         """
-        The example code begins in a similar fashion to the historical data example; 
-        we make one of these weird client objects containing a server wrapper connection, 
-        make one of these slightly less weird contract objects (here it is for December 2018 Eurodollar futures), 
-        resolve it into a populated contract object (explained more fully here) and then shove that into a request for market data.
+        Programmatically queries a flex report (must be manually defined in the IBKR interface)
+            see -> https://www.interactivebrokers.com/en/software/am/am/reports/activityflexqueries.htm
 
-        :param a: x
-        :param path: specify a path (from root folder) if you want to save the output, defaults to not saving
-        :return: x
+        :param queryID: same as ID from IBKR flex query interface
+        :param savepath: output path for xml file
+        :return: N/A (only writes to log)
         """
-
-        ib_insync.util.logToConsole()
-        trades = ib_insync.FlexReport(self.IBKR_FLEXREPORT_TOKEN, queryID)
-        if savepath:
+        try:
+            trades = ib_insync.FlexReport(self.IBKR_FLEXREPORT_TOKEN, queryID)
             trades.save(savepath)
-            ib_insync.flexreport._logger.info('Statement has been saved.')
+            ib_insync.flexreport._logger.info('Flex Query has been saved at {}'.format(savepath))
+        except:
+            raise NotImplementedError
 
     def parse_tradelog(self, loadpath):
         print('Parsing tradelog...')
@@ -96,7 +143,7 @@ class IBKR:
         
         # TODO convert all mentions of Trade to Order
         for order in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
-            insert_trade(self.conn, Trade(order))
+            schema.insert_trade(self.conn, models.Trade(order))
 
         self.conn.commit()
 
@@ -105,12 +152,104 @@ class IBKR:
         dividend_history = ib_insync.FlexReport(path=loadpath)
         
         for dividend in dividend_history.extract('ChangeInDividendAccrual'):
-            div = Dividend(dividend)
+            div = models.Dividend(dividend)
             # only consider accrued dividend postings (i.e. not reversals on paid out dividends) <- assumes dividends don't get cancelled
             if div.code == 'Po':
-                insert_dividend(self.conn, div)
+                schema.insert_dividend(self.conn, div)
         
         self.conn.commit()
+
+    def _update_tradelog_db(self, last_updated):
+        last_tradelog = ET.parse(TRADELOG_PATH)
+
+        # filter for new orders to insert into the database
+        for record in last_tradelog.iter('Order'):
+            # orders occured on the same day do not get updated in the tradelog until the day after
+            if datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S').date() >= last_updated.date():
+                order = SimpleNamespace(**record.attrib)
+                schema.insert_trade(self.conn, models.Trade(order))
+
+        self.conn.commit()
+
+    def _update_dividend_history_db(self, last_updated):
+        # update dividend history if last update was more than 1 day ago
+        last_dividend_history = ET.parse(DIVIDEND_HISTORY_PATH)
+
+        # filter for new dividends to insert into the database
+
+        for record in last_dividend_history.iter('ChangeInDividendAccrual'):
+            if datetime.strptime(record.attrib['exDate'], '%Y%m%d').date() >= last_updated.date():
+                dividend = SimpleNamespace(**record.attrib)
+                schema.insert_dividend(self.conn, models.Dividend(dividend))
+                
+
+        self.conn.commit()
+
+    def get_security_historical(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+        """
+
+        Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
+        """
+        assert self.connected, "Must connect to IBKR's Trader Workstation application before using this function"
+
+        # create contract object uing the unique contract ID
+        contract = ib_insync.Contract(conId = contract_id)
+        self.client.qualifyContracts(contract)
+
+        # use the IBKR API to get historical data
+        bars = self.client.reqHistoricalData(
+            contract, endDateTime=endDateTime, durationStr=durationStr,
+            barSizeSetting=barSizeSetting, whatToShow=whatToShow, useRTH=useRTH)
+
+        # convert to pandas dataframe
+        df = ib_insync.util.df(bars)
+
+        if updateDB:
+            df['stock_id'] = contract.symbol
+            df['ib_id'] = contract_id
+            df = df.astype({"date": str})
+            df = df.drop(columns=['average', 'barCount'])
+
+            if 'day' in barSizeSetting:
+                price_history_table = 'Price_History_Day'
+            elif 'hour' in barSizeSetting:
+                price_history_table = 'Price_History_Hour'
+                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
+            elif 'min' in barSizeSetting:
+                price_history_table = 'Price_History_Minute'
+                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
+                df['minute'] = df['date'].str.split(" ").str[1].str.split(':').str[1]
+            else:
+                raise ValueError("price data with bar size of {} cannot be inserted into the database".format(barSizeSetting))
+        
+            start_date = df['date'].min()
+            end_date = df['date'].max()
+            sql_execute = queries.sql_get_existing_records_dates.format(table=price_history_table, ib_id = contract_id, start_date=start_date, end_date=end_date)
+            
+            dates_already_in_db = [date[0] for date in queries.execute_sql(self.conn, sql_execute)]
+            df_new_records = df[~df['date'].isin(dates_already_in_db)]
+            schema.insert_price_history(price_history_table, self.conn, df_new_records)
+
+        return df
+
+    """
+
+    def option_IV(self):
+        assert self.connected, "Must connect to IBKR's Trader Workstation application before using this function"
+
+        option = ib_insync.Option('EOE', '20171215', 490, 'P', 'FTA', multiplier=100)
+        calc = self.client.calculateImpliedVolatility(
+            option, optionPrice=6.1, underPrice=525
+        )
+
+        print(calc)
+
+        calc = self.client.calculateOptionPrice(
+            option, volatility=0.14, underPrice=525
+        )
+
+        print(calc)
+    """
 
 
 """

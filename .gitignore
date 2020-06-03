@@ -2,6 +2,8 @@
 data/robintrack/**
 data/historic/**
 data/twitter/**
+data/db_backups/**
+data/temp/**
 scratch/**
 
 # don't track senstitive files

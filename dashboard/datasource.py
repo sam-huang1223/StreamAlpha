@@ -5,18 +5,13 @@ data required #TODO
 3. dividend history (+ TODO add to schema)
 """
 
-from dash.dependencies import Input, Output, State
-from datetime import datetime
-from types import SimpleNamespace
-import xml.etree.ElementTree as ET
 import configparser
-import sqlite3
 import ib_insync
+import sqlite3
+import pandas as pd
 
 from data import IBKR
-from data import models
-from data import schema
-
+from utils import sql_queries as queries
 
 # admin
 config = configparser.ConfigParser()
@@ -25,157 +20,108 @@ with open('config.ini') as f:
 
 TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
 DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
+PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 
 class Datasource:
-    def __init__(self, force_update_tradelog=False, force_update_dividend_history=False):
+    def __init__(self, connect=True):
         # initialize connection to IBKR
-        self.IBKR = IBKR()
-        self._setup(force_update_tradelog, force_update_dividend_history)
+        if connect:
+            self.IBKR = IBKR()
 
-    def _setup(self, force_update_tradelog, force_update_dividend_history):
-        print('Initializing Datasource...')
-        # update tradelog if last update was more than 1 day ago
-        try:
-            print('Checking Tradelog...')
-            doc = ET.parse(TRADELOG_PATH)
+        if PROJECT_DB_PATH:
+            self.conn = sqlite3.connect(PROJECT_DB_PATH)
+        else:
+            self.conn = sqlite3.connect(':memory:')
 
-            tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
-            tradelog_datetime = datetime.strptime(tradelog_datetime_str, '%Y%m%d;%H%M%S')
-        except OSError:
-            # create tradelog if it doesn't exist
-            print('Generating Tradelog...')
-            self.IBKR.query_flexreport('420983', savepath=TRADELOG_PATH)
-            tradelog_datetime = datetime.now()
-
-        # update dividend history if last update was more than 1 day ago
-        try:
-            print('Checking Dividend History...')
-            doc = ET.parse(DIVIDEND_HISTORY_PATH)
-
-            dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
-            dividend_history_datetime = datetime.strptime(dividend_history_datetime_str, '%Y%m%d;%H%M%S')
-        except OSError:
-            # create dividend history if it doesn't exist
-            print('Generating Dividend History...')
-            self.IBKR.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
-            dividend_history_datetime = datetime.now()
-
-        if (datetime.now() - tradelog_datetime).days > 0 or force_update_tradelog:
-            # parse the updated tradelog
-            self.IBKR.query_flexreport('420983', savepath=TRADELOG_PATH)
-            # insert the differentials into the project DB
-            print('Updating Tradelog...')
-            self._update_tradelog_db(last_updated=tradelog_datetime)
-        print('Tradelog is up-to-date')
-
-        if (datetime.now() - dividend_history_datetime).days > 0 or force_update_dividend_history:
-            # parse the updated dividend history
-            self.IBKR.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
-            # insert the differentials into the project DB
-            print('Updating Dividend History...')
-            self._update_dividend_history_db(last_updated=dividend_history_datetime)
-        print('Dividend History is up-to-date')
-        
-        print('Datasource established')
-
-    def _update_tradelog_db(self, last_updated):
-        last_tradelog = ET.parse(TRADELOG_PATH)
-
-        # filter for new orders to insert into the database
-        for record in last_tradelog.iter('Order'):
-            # orders occured on the same day do not get updated in the tradelog until the day after
-            if datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S').date() >= last_updated.date():
-                order = SimpleNamespace(**record.attrib)
-                schema.insert_trade(self.IBKR.conn, models.Trade(order))
-
-        self.IBKR.conn.commit()
-
-    def _update_dividend_history_db(self, last_updated):
-        # update dividend history if last update was more than 1 day ago
-        last_dividend_history = ET.parse(DIVIDEND_HISTORY_PATH)
-
-        # filter for new dividends to insert into the database
-
-        for record in last_dividend_history.iter('ChangeInDividendAccrual'):
-            if datetime.strptime(record.attrib['exDate'], '%Y%m%d').date() >= last_updated.date():
-                dividend = SimpleNamespace(**record.attrib)
-                schema.insert_dividend(self.IBKR.conn, models.Dividend(dividend))
-                
-
-        self.IBKR.conn.commit()
-
-    def get_security_historical(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+    def get_covered_call_trades(self, ticker, start_time=None, end_time=None, allow_naked_calls=False):
         """
 
-        Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
+        * pnl_realized includes commission - not possible / too complex to factor out given shifting cost basis
         """
-        assert self.IBKR.connected, "Must connect to IBKR's Trader Workstation application before using this function"
-
-        # create contract object uing the unique contract ID
-        contract = ib_insync.Contract(conId = contract_id)
-        self.IBKR.client.qualifyContracts(contract)
-
-        # use the IBKR API to get historical data
-        bars = self.IBKR.client.reqHistoricalData(
-            contract, endDateTime=endDateTime, durationStr=durationStr,
-            barSizeSetting=barSizeSetting, whatToShow=whatToShow, useRTH=useRTH)
-
-        # convert to pandas dataframe
-        df = ib_insync.util.df(bars)
-
-        if updateDB:
-            df['stock_id'] = contract.symbol
-            df['ib_id'] = contract_id
-            df = df.astype({"date": str})
-            df = df.drop(columns=['average', 'barCount'])
-
-            sql_get_existing_records = """
-                SELECT date 
-                FROM {table}
-                WHERE 
-                ib_id = '{ib_id}'
-                    AND 
-                date BETWEEN '{start_date}' AND '{end_date}' 
-                ORDER BY date ASC
-            """
-
-            if 'day' in barSizeSetting:
-                price_history_table = 'Price_History_Day'
-            elif 'hour' in barSizeSetting:
-                price_history_table = 'Price_History_Hour'
-                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
-            elif 'min' in barSizeSetting:
-                price_history_table = 'Price_History_Minute'
-                df['hour'] = df['date'].str.split(" ").str[1].str.split(':').str[0]
-                df['minute'] = df['date'].str.split(" ").str[1].str.split(':').str[1]
-            else:
-                raise ValueError("price data with bar size of {} cannot be inserted into the database".format(barSizeSetting))
         
-            start_date = df['date'].min()
-            end_date = df['date'].max()
-            sql_execute = sql_get_existing_records.format(table=price_history_table, ib_id = contract_id, start_date=start_date, end_date=end_date)
+        date_range_string = ''
+        if start_time:
+            date_range_string += 'AND execution_time >= {}'.format(start_time)
+        if end_time:
+            date_range_string += 'AND execution_time <= {}'.format(end_time)
+
+        stock_trades_sql = queries.sql_get_covered_calls_trades_stock.format(
+            ticker=ticker,
+            date_range_string=date_range_string
+        )
+        call_trades_sql = queries.sql_get_covered_calls_trades_call.format(
+            ticker=ticker,
+            date_range_string=date_range_string
+        )
+        
+        stock_trades = pd.read_sql_query(stock_trades_sql, self.conn)
+        call_trades = pd.read_sql_query(call_trades_sql, self.conn)
+
+        # replace pnl_realized as it currently combines PnL from options exercise
+        stock_trades['pnl_realized'] = stock_trades['total_cost_basis'] - stock_trades['total']
             
-            dates_already_in_db = [date[0] for date in self.IBKR.conn.cursor().execute(sql_execute).fetchall()]
-            df = df[~df['date'].isin(dates_already_in_db)]
-            schema.insert_price_history(price_history_table, self.IBKR.conn, df)
+        # cannot realize pnl on purchases only on sales
+        stock_trades['pnl_realized'][stock_trades['quantity'] > 0] = None
 
-        return df
+        # replace pnl_realized as it includes comission paid
 
-    """
+        # filter out purchased long calls (not part of covered call strategy)
+        long_call_positions = set()
+        
+        contracts_covered_placeholder = stock_trades[['execution_time', 'quantity']].rename(columns={'quantity':'underlying_quantity'})
+        call_trades = pd.concat([call_trades, contracts_covered_placeholder], sort=False, ignore_index=True)
+        call_trades.sort_values('execution_time', axis=0, ascending=True, inplace=True)
+        call_trades.reset_index(drop=True, inplace=True)
 
-    def option_IV(self):
-        assert self.IBKR.connected, "Must connect to IBKR's Trader Workstation application before using this function"
+        call_trades['underlying_quantity'].fillna(0, inplace=True)
+        call_trades['contracts_covered'] = (call_trades['underlying_quantity'].cumsum() / 100).astype(int)
+        call_trades['open_short_calls'] = None
+        call_trades.drop('underlying_quantity', axis=1, inplace=True)
 
-        option = ib_insync.Option('EOE', '20171215', 490, 'P', 'FTA', multiplier=100)
-        calc = self.client.calculateImpliedVolatility(
-            option, optionPrice=6.1, underPrice=525
-        )
+        call_trades.at[0, 'open_short_calls'] = 0
 
-        print(calc)
+        indices_to_drop = []
 
-        calc = self.client.calculateOptionPrice(
-            option, volatility=0.14, underPrice=525
-        )
+        for trade in call_trades.itertuples():
+            if trade.Index > 0:
+                call_trades.at[trade.Index, 'open_short_calls'] = call_trades.at[trade.Index - 1, 'open_short_calls']
 
-        print(calc)
-    """
+            # if this is a placeholder entry (used to populate contracts_covered)
+            if pd.isnull(trade.quantity):
+                pass
+
+            # if this trade opens a long call position
+            elif trade.quantity > 0 and call_trades.at[trade.Index, 'open_short_calls'] == 0:
+                print(
+                    'long call'
+                )
+                long_call_positions.add(trade.option_id)
+            
+            # if this trade closes a long call position
+            elif trade.quantity < 0 and trade.option_id in long_call_positions:
+                long_call_positions.remove(trade.option_id)
+
+            # if this trade is actually part of the covered call strategy
+            else:
+                if trade.quantity < 0:
+                    call_trades.at[trade.Index, 'open_short_calls'] += 1
+                elif trade.quantity > 0:
+                    call_trades.at[trade.Index, 'open_short_calls'] -= 1
+                continue
+            
+            indices_to_drop.append(trade.Index)
+
+        call_trades.drop(indices_to_drop, inplace=True)
+
+        for trade in call_trades.itertuples():
+            if int(trade.open_short_calls) > trade.contracts_covered and not allow_naked_calls:
+                raise ValueError('Naked calls are not allowed')
+        
+        # replace pnl_realized as it currently combines PnL from options exercise
+        call_trades['pnl_realized'] = call_trades['total_cost_basis']
+
+        # can only realize pnl when calls are bought to close or automatically closed
+        call_trades['pnl_realized'][call_trades['quantity'] < 0] = None
+
+        return stock_trades, call_trades
+        
