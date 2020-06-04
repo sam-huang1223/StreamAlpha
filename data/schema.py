@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS Stock (
                                     ib_id VARCHAR(16) NOT NULL,
                                     isin VARCHAR(32) NOT NULL,
                                     exchange VARCHAR(16) NOT NULL,
-                                    description TEXT
+                                    description TEXT,
+                                    currency VARCHAR(4)
                                     );
 """
 
@@ -160,7 +161,7 @@ def insert_trade(conn, trade):
         c.execute(sql, params)
 
         if not c.execute("SELECT * FROM Stock WHERE stock_id = '{}'".format(trade.security.ticker)).fetchall():
-            insert_stock(c, trade.security.ticker, trade.security.ib_id, trade.security.isin, trade.security.exchange, description=trade.security.description)
+            insert_stock(c, trade.security.ticker, trade.security.ib_id, trade.security.isin, trade.security.exchange, trade.currency, description=trade.security.description)
 
         print(
             "Successfully parsed one STOCK {trade_type} of {symbol} on {date}".format(
@@ -182,7 +183,7 @@ def insert_trade(conn, trade):
 
         # insert stock_id and ib_id into stock if it does not exist
         if not c.execute("SELECT * FROM Stock WHERE stock_id = '{}'".format(trade.security.underlying)).fetchall():
-            insert_stock(c, trade.security.underlying, trade.security.underlying_ib_id, trade.security.underlying_isin, trade.security.underlying_exchange)
+            insert_stock(c, trade.security.underlying, trade.security.underlying_ib_id, trade.security.underlying_isin, trade.security.underlying_exchange, trade.currency)
 
         if not c.execute("SELECT * FROM Option WHERE option_id = '{}'".format(trade.security.name)).fetchall():
             insert_option(c, trade)
@@ -214,11 +215,11 @@ def insert_trade(conn, trade):
             ) # TODO convert print statement to log
 
 
-def insert_stock(c, ticker, ib_id, isin, exchange, description=None):
-    sql = """ INSERT INTO Stock(stock_id, ib_id, isin, exchange, description)
-              VALUES(?,?,?,?,?) """
+def insert_stock(c, ticker, ib_id, isin, exchange, currency, description=None):
+    sql = """ INSERT INTO Stock(stock_id, ib_id, isin, exchange, description, currency)
+              VALUES(?,?,?,?,?,?) """
 
-    params = (ticker, ib_id, isin, exchange, description)
+    params = (ticker, ib_id, isin, exchange, currency, description)
     c.execute(sql, params)
 
 def insert_option(c, trade):

@@ -80,7 +80,7 @@ class IBKR:
 
         # update dividend history if last update was more than 1 day ago
         try:
-            print('Checking Dividend History...')
+            print('Checking Dividend History..')
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
 
             dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
@@ -134,8 +134,9 @@ class IBKR:
             trades = ib_insync.FlexReport(self.IBKR_FLEXREPORT_TOKEN, queryID)
             trades.save(savepath)
             ib_insync.flexreport._logger.info('Flex Query has been saved at {}'.format(savepath))
-        except:
-            raise NotImplementedError
+        except Exception as e:
+            print(e.message, e.args)
+            raise ConnectionError
 
     def parse_tradelog(self, loadpath):
         print('Parsing tradelog...')

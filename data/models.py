@@ -46,6 +46,7 @@ class Stock:
         self.ib_id = trade.conid
         self.isin = trade.isin
         self.exchange = trade.listingExchange
+        self.currency = trade.currency
 
 class Option:
 

@@ -1,7 +1,9 @@
 import configparser
 import ib_insync
 import sqlite3
+
 import pandas as pd
+import numpy as np
 
 from data import IBKR
 from utils import sql_queries as queries
@@ -15,6 +17,9 @@ TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
 DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
 PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 
+pd.options.mode.chained_assignment = None
+#
+
 class Engine:
     def __init__(self, connect=True):
         """
@@ -23,7 +28,19 @@ class Engine:
         if connect:
             self.IBKR = IBKR()
 
-    def get_covered_call_trades(self, conn, ticker, start_time=None, end_time=None):
+    def populate_historical_prices(self, ticker, start_time, end_time):
+        #contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+        
+        self.IBKR.get_security_historical()
+
+        # TODO
+
+
+class Covered_Calls_Strat:
+    def __init__(self, engine):
+        self.engine = engine
+
+    def get_trades(self, conn, ticker, start_time=None, end_time=None):
         """
 
         * pnl_realized includes commission - not possible / too complex to factor out given shifting cost basis
@@ -106,5 +123,62 @@ class Engine:
         # can only realize pnl when calls are bought to close or automatically closed
         call_trades['pnl_realized'][call_trades['quantity'] < 0] = None
 
-        return stock_trades.to_dict(), call_trades.to_dict()
+        return stock_trades, call_trades
+
+    def calculate_cumulative_positions(self, stock_trades, call_trades):
+        call_trades['assigned'] = False
+        call_trades['expired'] = False
+        call_trades['call_bought_back'] = False
+        call_trades['call_sold'] = False
+        
+
+        df = pd.concat([stock_trades, call_trades], sort=False, ignore_index=True)
+        df.sort_values('execution_time', axis=0, ascending=True, inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
+        df = df[['execution_time', 'option_id', 'quantity', 'fxRateToBase', 'total', 'total_cost_basis', 'commission', 'pnl_realized', 'assigned', 'expired', 'call_bought_back', 'call_sold']]
+
+        df['pnl_realized'].fillna(0, inplace=True)
+        
+        df['position_value'] = df['pnl_realized']
+
+        df.at[0, 'position_value'] = df.at[0, 'total_cost_basis']
+
+        df['cumulative_value'] = df['position_value'].cumsum()
+        df['cumulative_commissions'] = df['commission'].cumsum().abs()
+        df['cumulative_cash_investment'] = df['total'].cumsum()  # excludes commissions
+
+        df['time_series_flag'] = True
+
+        # compute values for end state of trade (e.g. assigned, expired, bought back)
+        for order in df.itertuples():
+            if pd.isnull(order.option_id):
+                # should be nan if trade was referencing a stock
+                continue
+
+            if order.quantity < 0:
+                df.at[order.Index, 'call_sold'] = True
+            else:
+                if order.total > 0:
+                    df.at[order.Index, 'call_bought_back'] = True
+                elif order.execution_time == df.at[order.Index + 1, 'execution_time']:
+                    # if a simultaneous order occured, then it was assigned
+                    df.at[order.Index, 'assigned'] = True
+                    # do not include duplicate order as part of the time series
+                    df.at[order.Index + 1, 'time_series_flag'] = False
+                elif order.execution_time == df.at[order.Index - 1, 'execution_time']:
+                    # if a simultaneous order occured, then it was assigned
+                    df.at[order.Index, 'assigned'] = True
+                    # do not include duplicate order as part of the time series
+                    df.at[order.Index - 1, 'time_series_flag'] = False
+                else:
+                    df.at[order.Index, 'expired'] = True
+
+        
+
+
+        return df[['execution_time', 'fxRateToBase', 'commission', 'cumulative_value', 'cumulative_commissions', 'cumulative_cash_investment', 'assigned', 'expired', 'call_bought_back', 'call_sold', 'option_id', 'time_series_flag']]
+
+
+
         
