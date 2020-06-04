@@ -20,7 +20,7 @@ PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 app = Flask(__name__)
 app.debug = True
 
-datasource = Datasource()
+engine = Engine()
 
 @app.route('/trades/strategy/<ticker>', methods = ['GET'])
 def stock(ticker):
@@ -34,7 +34,6 @@ def stock(ticker):
         strategy -> e.g. covered_call
         start_time -> e.g. YYYY-MM-DD HH:MM:SS
         end_time -> e.g. YYYY-MM-DD HH:MM:SS
-        allow_naked_calls -> True/False
         """
 
         data = request.form
@@ -51,8 +50,8 @@ def stock(ticker):
                 end_time = None
 
             if data['strategy'] == 'covered_call':
-                stock_trades, call_trades = datasource.get_covered_call_trades(conn, ticker, start_time, end_time)
-                return {'stock_trades': stock_trades, 'call_trades': call_trades}
+                stock_trades, call_trades = engine.get_covered_call_trades(conn, ticker, start_time, end_time)
+                return {'stock_trades': stock_trades, 'call_trades': call_trades}, 200, {'schema': '*insert schema here'}
 
 if __name__ == '__main__':
     app.run()

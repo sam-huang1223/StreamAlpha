@@ -1,12 +1,6 @@
 import requests
 
 # maybe https://plotly.com/python/getting-started-with-chart-studio/ for hosting?
-
-#r = requests.get('http://127.0.0.1:5000/trades/strategy/AC', data={'strategy': 'covered_call'})
-
-#print(r.content)
-#print(r.headers.get('schema'))
-
 # multi page support + URLs -> https://dash.plotly.com/urls
 
 import json

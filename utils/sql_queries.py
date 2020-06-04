@@ -28,5 +28,11 @@ sql_get_covered_calls_trades_call = """
         execution_time ASC
 """
 
+sql_get_all_stocks_traded = """
+    SELECT DISTINCT stock_id
+    FROM Trade
+    ORDER BY stock_id ASC
+"""
+
 def execute_sql(conn, query_string):
     return conn.cursor().execute(query_string).fetchall()

@@ -31,9 +31,9 @@ class Engine:
         
         date_range_string = ''
         if start_time:
-            date_range_string += 'AND execution_time >= {}'.format(start_time)
+            date_range_string += "AND execution_time >= '{}' ".format(start_time)
         if end_time:
-            date_range_string += 'AND execution_time <= {}'.format(end_time)
+            date_range_string += "AND execution_time <= '{}' ".format(end_time)
 
         stock_trades_sql = queries.sql_get_covered_calls_trades_stock.format(
             ticker=ticker,
