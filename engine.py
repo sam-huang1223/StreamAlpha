@@ -1,10 +1,3 @@
-"""
-data required #TODO
-1. price history for underlying
-2. price histories for calls sold during holding period
-3. dividend history (+ TODO add to schema)
-"""
-
 import configparser
 import ib_insync
 import sqlite3
@@ -22,18 +15,15 @@ TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
 DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
 PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 
-class Datasource:
+class Engine:
     def __init__(self, connect=True):
-        # initialize connection to IBKR
+        """
+        This class contains various methods th
+        """
         if connect:
             self.IBKR = IBKR()
 
-        if PROJECT_DB_PATH:
-            self.conn = sqlite3.connect(PROJECT_DB_PATH)
-        else:
-            self.conn = sqlite3.connect(':memory:')
-
-    def get_covered_call_trades(self, ticker, start_time=None, end_time=None, allow_naked_calls=False):
+    def get_covered_call_trades(self, conn, ticker, start_time=None, end_time=None):
         """
 
         * pnl_realized includes commission - not possible / too complex to factor out given shifting cost basis
@@ -54,8 +44,8 @@ class Datasource:
             date_range_string=date_range_string
         )
         
-        stock_trades = pd.read_sql_query(stock_trades_sql, self.conn)
-        call_trades = pd.read_sql_query(call_trades_sql, self.conn)
+        stock_trades = pd.read_sql_query(stock_trades_sql, conn)
+        call_trades = pd.read_sql_query(call_trades_sql, conn)
 
         # replace pnl_realized as it currently combines PnL from options exercise
         stock_trades['pnl_realized'] = stock_trades['total_cost_basis'] - stock_trades['total']
@@ -92,9 +82,6 @@ class Datasource:
 
             # if this trade opens a long call position
             elif trade.quantity > 0 and call_trades.at[trade.Index, 'open_short_calls'] == 0:
-                print(
-                    'long call'
-                )
                 long_call_positions.add(trade.option_id)
             
             # if this trade closes a long call position
@@ -112,10 +99,6 @@ class Datasource:
             indices_to_drop.append(trade.Index)
 
         call_trades.drop(indices_to_drop, inplace=True)
-
-        for trade in call_trades.itertuples():
-            if int(trade.open_short_calls) > trade.contracts_covered and not allow_naked_calls:
-                raise ValueError('Naked calls are not allowed')
         
         # replace pnl_realized as it currently combines PnL from options exercise
         call_trades['pnl_realized'] = call_trades['total_cost_basis']
@@ -123,5 +106,5 @@ class Datasource:
         # can only realize pnl when calls are bought to close or automatically closed
         call_trades['pnl_realized'][call_trades['quantity'] < 0] = None
 
-        return stock_trades, call_trades
+        return stock_trades.to_dict(), call_trades.to_dict()
         

@@ -1,4 +1,4 @@
-from dashboard import datasource
+from engine import Engine
 
 
 def pipeline():
@@ -6,11 +6,11 @@ def pipeline():
 
 pipeline()
 
-ds = datasource.Datasource(connect=False)
-#ds.IBKR.connect(read_only=True)
-#print(ds.IBKR.client.positions())
+engine = Engine(connect=False)
+#engine.IBKR.connect(read_only=True)
+#print(engine.IBKR.client.positions())
 """
-print(ds.IBKR.get_security_historical(
+print(engine.IBKR.get_security_historical(
     '360310574', 
     durationStr='3 W', 
     barSizeSetting='1 day', 
@@ -19,9 +19,3 @@ print(ds.IBKR.get_security_historical(
     #endDateTime='20190927 23:59:59', 
     updateDB=True))
 """
-
-a, b = ds.get_covered_call_trades('AC', '', '')
-
-print(a)
-
-print(b)
