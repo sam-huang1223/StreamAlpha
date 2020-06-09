@@ -1,4 +1,4 @@
-from dashboard import charts
+from dashboard.app import DASHboard
 
 import sqlite3
 import configparser
@@ -44,4 +44,7 @@ print(engine.IBKR.get_security_historical(
 """
 # see reference here -> https://interactivebrokers.github.io/tws-api/historical_bars.html#hd_request
 
-charts.run_dash(True)
+dashboard = DASHboard()
+dashboard.serve(debug=True)
+
+# TODO - write "destroy script to reset db + xml files"

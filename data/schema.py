@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS Price_History_Day (
                                     close DECIMAL NOT NULL,
                                     high DECIMAL NOT NULL,
                                     low DECIMAL NOT NULL,
+                                    mid DECIMAL NOT NULL,
                                     volume DECIMAL NOT NULL,
                                     FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
                                     PRIMARY KEY (date, ib_id)
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS Price_History_Hour (
                                     close DECIMAL NOT NULL,
                                     high DECIMAL NOT NULL,
                                     low DECIMAL NOT NULL,
+                                    mid DECIMAL NOT NULL,
                                     volume DECIMAL NOT NULL,
                                     FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
                                     PRIMARY KEY (date, ib_id)
@@ -115,6 +117,7 @@ CREATE TABLE IF NOT EXISTS Price_History_Minute (
                                     close DECIMAL NOT NULL,
                                     high DECIMAL NOT NULL,
                                     low DECIMAL NOT NULL,
+                                    mid DECIMAL NOT NULL,
                                     volume DECIMAL NOT NULL,
                                     FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
                                     PRIMARY KEY (date, ib_id)
@@ -169,7 +172,7 @@ def insert_trade(conn, trade):
                     symbol=trade.security.ticker,
                     date=trade.execution_time,
                 )
-            ) # TODO convert print statement to log
+            ) # convert print statement to log
 
     elif trade.security_type == 'OPT':
         sql = """ INSERT INTO Trade(trade_id, trade_type, security_type, quantity, currency, fxRateToBase, execution_time, settle_date, commission, 
@@ -194,7 +197,7 @@ def insert_trade(conn, trade):
                     symbol=trade.security.name,
                     date=trade.execution_time,
                 )
-            ) # TODO convert print statement to log
+            ) # convert print statement to log
 
     elif trade.security_type == 'CASH':
         sql = """ INSERT INTO Trade(trade_id, trade_type, security_type, quantity, currency, fxRateToBase, execution_time, settle_date, commission, 
@@ -212,7 +215,7 @@ def insert_trade(conn, trade):
                     symbol=trade.security.symbol,
                     date=trade.execution_time,
                 )
-            ) # TODO convert print statement to log
+            ) # convert print statement to log
 
 
 def insert_stock(c, ticker, ib_id, isin, exchange, currency, description=None):
@@ -245,7 +248,7 @@ def insert_dividend(c, dividend):
                 net_total=dividend.net_total,
                 pay_date=dividend.pay_date,
             )
-    ) # TODO convert print statement to log
+    ) # convert print statement to log
 
 def insert_price_history(whichTable, conn, prices_df):
     prices_df.to_sql(whichTable, con=conn, if_exists='append', index=False)

@@ -7,6 +7,7 @@ import numpy as np
 
 from data import IBKR
 from utils import sql_queries as queries
+from dashboard.app import SYMBOLS
 
 # admin
 config = configparser.ConfigParser()
@@ -72,7 +73,7 @@ class Covered_Calls_Strat:
 
         # replace pnl_realized as it includes comission paid
 
-        # filter out purchased long calls (not part of covered call strategy)
+        # --- filter out purchased long calls (not part of covered call strategy) ---
         long_call_positions = set()
         
         contracts_covered_placeholder = stock_trades[['execution_time', 'quantity']].rename(columns={'quantity':'underlying_quantity'})
@@ -116,6 +117,7 @@ class Covered_Calls_Strat:
             indices_to_drop.append(trade.Index)
 
         call_trades.drop(indices_to_drop, inplace=True)
+        # ---
         
         # replace pnl_realized as it currently combines PnL from options exercise
         call_trades['pnl_realized'] = call_trades['total_cost_basis']
@@ -126,58 +128,80 @@ class Covered_Calls_Strat:
         return stock_trades, call_trades
 
     def calculate_cumulative_positions(self, stock_trades, call_trades):
-        call_trades['assigned'] = False
-        call_trades['expired'] = False
-        call_trades['call_bought_back'] = False
-        call_trades['call_sold'] = False
-        
-
         df = pd.concat([stock_trades, call_trades], sort=False, ignore_index=True)
         df.sort_values('execution_time', axis=0, ascending=True, inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        df = df[['execution_time', 'option_id', 'quantity', 'fxRateToBase', 'total', 'total_cost_basis', 'commission', 'pnl_realized', 'assigned', 'expired', 'call_bought_back', 'call_sold']]
+        df = df[['execution_time', 'option_id', 'quantity', 'price', 'fxRateToBase', 'total', 'total_cost_basis', 'commission', 'pnl_realized', 'strike', 'expiry']]
 
         df['pnl_realized'].fillna(0, inplace=True)
         
-        df['position_value'] = df['pnl_realized']
+        df['value_delta'] = df['total_cost_basis'] - df['total'] + df['commission']  # removes impact of commissions
 
-        df.at[0, 'position_value'] = df.at[0, 'total_cost_basis']
+        df.at[0, 'value_delta'] = df.at[0, 'total_cost_basis']
 
-        df['cumulative_value'] = df['position_value'].cumsum()
+        df['cumulative_value'] = df['value_delta'].cumsum()
         df['cumulative_commissions'] = df['commission'].cumsum().abs()
         df['cumulative_cash_investment'] = df['total'].cumsum()  # excludes commissions
 
+        # --- derived columns --- #
         df['time_series_flag'] = True
+        df['cumulative_value_percent_change_label'] = pd.Series(None, dtype='str')
+        df['negative_change_flag'] = pd.Series(None, dtype='bool')
+        df['positive_change_flag'] = pd.Series(None, dtype='bool')
 
-        # compute values for end state of trade (e.g. assigned, expired, bought back)
+        df['trade_end_state'] = pd.Series(None, dtype='str')
+        df['trade_end_state_symbol'] = pd.Series(None, dtype='str')
+        df['trade_end_state_symbol_color'] = pd.Series(None, dtype='str')
+        # --- #
+
+        starting_value = df.at[0, "cumulative_value"]
+
+        # compute values for end state of trade (e.g. assigned, expired, bought back, % pnl)
         for order in df.itertuples():
+            if not order.Index == 0:
+                delta = (df.at[order.Index, "cumulative_value"] / starting_value) - 1
+
+                if df.at[order.Index, "cumulative_value"] > df.at[order.Index - 1, "cumulative_value"]:
+                    df.at[order.Index, "cumulative_value_percent_change_label"] = "{}%".format(round(delta*100, 2))
+                    df.at[order.Index, "positive_change_flag"] = True
+                elif df.at[order.Index, "cumulative_value"] < df.at[order.Index - 1, "cumulative_value"]:
+                    df.at[order.Index, "cumulative_value_percent_change_label"] = "{}%".format(round(delta*100, 2))
+                    df.at[order.Index, "negative_change_flag"] = True
+
             if pd.isnull(order.option_id):
                 # should be nan if trade was referencing a stock
                 continue
 
             if order.quantity < 0:
-                df.at[order.Index, 'call_sold'] = True
+                df.at[order.Index, 'trade_end_state'] = 'Sold to Open'
+                df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Sold to Open']
+                df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Sold to Open']
             else:
                 if order.total > 0:
-                    df.at[order.Index, 'call_bought_back'] = True
+                    df.at[order.Index, 'trade_end_state'] = 'Bought to Close'
+                    df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Bought to Close']
+                    df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Bought to Close']
                 elif order.execution_time == df.at[order.Index + 1, 'execution_time']:
                     # if a simultaneous order occured, then it was assigned
-                    df.at[order.Index, 'assigned'] = True
+                    df.at[order.Index, 'trade_end_state'] = 'Assigned'
+                    df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Assigned']
+                    df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Assigned']
                     # do not include duplicate order as part of the time series
                     df.at[order.Index + 1, 'time_series_flag'] = False
                 elif order.execution_time == df.at[order.Index - 1, 'execution_time']:
                     # if a simultaneous order occured, then it was assigned
-                    df.at[order.Index, 'assigned'] = True
+                    df.at[order.Index, 'trade_end_state'] = 'Assigned'
+                    df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Assigned']
+                    df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Assigned']
                     # do not include duplicate order as part of the time series
                     df.at[order.Index - 1, 'time_series_flag'] = False
                 else:
-                    df.at[order.Index, 'expired'] = True
+                    df.at[order.Index, 'trade_end_state'] = 'Expired'
+                    df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Expired']
+                    df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Expired']
 
-        
-
-
-        return df[['execution_time', 'fxRateToBase', 'commission', 'cumulative_value', 'cumulative_commissions', 'cumulative_cash_investment', 'assigned', 'expired', 'call_bought_back', 'call_sold', 'option_id', 'time_series_flag']]
+        return df[['execution_time', 'fxRateToBase', 'commission', 'value_delta', 'cumulative_value', 'cumulative_commissions', 'cumulative_cash_investment', 'option_id', 'strike', 'expiry', 'time_series_flag', 'cumulative_value_percent_change_label', 'negative_change_flag', 'positive_change_flag', 'trade_end_state', 'trade_end_state_symbol', 'trade_end_state_symbol_color']]
 
 
 

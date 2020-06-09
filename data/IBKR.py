@@ -67,7 +67,6 @@ class IBKR:
 
         # update tradelog if last update was more than 1 day ago
         try:
-            print('Checking Tradelog...')
             doc = ET.parse(TRADELOG_PATH)
 
             tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
@@ -80,7 +79,6 @@ class IBKR:
 
         # update dividend history if last update was more than 1 day ago
         try:
-            print('Checking Dividend History..')
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
 
             dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
@@ -92,6 +90,7 @@ class IBKR:
             dividend_history_datetime = datetime.now()
 
         # if there are new entries, parse the updated tradelog into db
+        print('Checking Tradelog...')
         if (datetime.now() - tradelog_datetime).days > 0:
             self.query_flexreport('420983', savepath=TRADELOG_PATH)
             print('Updating Tradelog...')
@@ -99,6 +98,7 @@ class IBKR:
         print('Tradelog is up-to-date\n')
         
         # if there are new entries, parse the updated dividend history in db
+        print('Checking Dividend History..')
         if (datetime.now() - dividend_history_datetime).days > 0:
             self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
             print('Updating Dividend History...')
@@ -109,7 +109,8 @@ class IBKR:
 
     def __del__(self):
         self.conn.close()
-        self.disconnect()
+        if self.connected:
+            self.disconnect()
 
     def connect(self, read_only):
         self.client.connect('127.0.0.1', 7496, clientId=1, readonly=read_only)
@@ -142,7 +143,7 @@ class IBKR:
         print('Parsing tradelog...')
         report = ib_insync.FlexReport(path=loadpath)
         
-        # TODO convert all mentions of Trade to Order
+        # convert all mentions of Trade to Order
         for order in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
             schema.insert_trade(self.conn, models.Trade(order))
 
@@ -226,6 +227,8 @@ class IBKR:
             start_date = df['date'].min()
             end_date = df['date'].max()
             sql_execute = queries.sql_get_existing_records_dates.format(table=price_history_table, ib_id = contract_id, start_date=start_date, end_date=end_date)
+            
+            df['mid'] = (df['high'] + df['low']) / 2
             
             dates_already_in_db = [date[0] for date in queries.execute_sql(self.conn, sql_execute)]
             df_new_records = df[~df['date'].isin(dates_already_in_db)]

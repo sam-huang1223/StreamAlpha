@@ -1,131 +1,149 @@
+"""
+maybe https://plotly.com/python/getting-started-with-chart-studio/ for hosting?
+multi page support + URLs -> https://dash.plotly.com/urls
+
+FUTURE -> embed into flask app (https://medium.com/@olegkomarov_77860/how-to-embed-a-dash-app-into-an-existing-flask-app-ea05d7a2210b)
+"""
+
+import configparser
+import sqlite3
 import requests
-
-# maybe https://plotly.com/python/getting-started-with-chart-studio/ for hosting?
-# multi page support + URLs -> https://dash.plotly.com/urls
-
-import json
 
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
+import dash_daq as daq
 from dash.dependencies import Input, Output
+import plotly.graph_objects as go
+from plotly import tools
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+import utils.sql_queries as queries
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+# --- execute necessary prelimary steps --- #config = configparser.ConfigParser()
+config = configparser.ConfigParser()
+with open('config.ini') as f:
+    config.read_file(f)
 
-styles = {
-    'pre': {
-        'border': 'thin lightgrey solid',
-        'overflowX': 'scroll'
+PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
+
+COLORS = {
+    'background': '#202B33',
+    'text': '#BFCCD6',
+    'toggles': '#293742',
+}
+
+SIZES = {
+    'background': '#',
+    'text': '#',
+    'toggles': 50,
+}
+
+LABEL_COLORS = {
+    'positive': {
+        'bg': '#62D96B',
+        'text': '#1D7324',
+        'border': '#29A634',
+    },
+    'negative': {
+        'bg': '#FF7373',
+        'text': '#A82A2A',
+        'border': '#DB3737',
     }
 }
 
-app.layout = html.Div([
-    dcc.Graph(
-        id='basic-interactions',
-        figure={
-            'data': [
-                {
-                    'x': [1, 2, 3, 4],
-                    'y': [4, 1, 3, 5],
-                    'text': ['a', 'b', 'c', 'd'],
-                    'customdata': ['c.a', 'c.b', 'c.c', 'c.d'],
-                    'name': 'Trace 1',
-                    'mode': 'markers',
-                    'marker': {'size': 12}
-                },
-                {
-                    'x': [1, 2, 3, 4],
-                    'y': [9, 4, 1, 4],
-                    'text': ['w', 'x', 'y', 'z'],
-                    'customdata': ['c.w', 'c.x', 'c.y', 'c.z'],
-                    'name': 'Trace 2',
-                    'mode': 'markers',
-                    'marker': {'size': 12}
-                }
-            ],
-            'layout': {
-                'clickmode': 'event+select'
-            }
-        }
-    ),
-
-    html.Div(className='row', children=[
-        html.Div([
-            dcc.Markdown("""
-                **Hover Data**
-
-                Mouse over values in the graph.
-            """),
-            html.Pre(id='hover-data', style=styles['pre'])
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown("""
-                **Click Data**
-
-                Click on points in the graph.
-            """),
-            html.Pre(id='click-data', style=styles['pre']),
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown("""
-                **Selection Data**
-
-                Choose the lasso or rectangle tool in the graph's menu
-                bar and then select points in the graph.
-
-                Note that if `layout.clickmode = 'event+select'`, selection data also 
-                accumulates (or un-accumulates) selected data if you hold down the shift
-                button while clicking.
-            """),
-            html.Pre(id='selected-data', style=styles['pre']),
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown("""
-                **Zoom and Relayout Data**
-
-                Click and drag on the graph to zoom or click on the zoom
-                buttons in the graph's menu bar.
-                Clicking on legend items will also fire
-                this event.
-            """),
-            html.Pre(id='relayout-data', style=styles['pre']),
-        ], className='three columns')
-    ])
-])
+SYMBOLS = {
+    'shape': {
+        'Expired': 'triangle-up',
+        'Assigned': 'square',
+        'Sold to Open': 'triangle-right',
+        'Bought to Close': 'triangle-left',
+    },
+    'color': {
+        'Assigned': '#D9822B',
+        'Expired': '#29A634',
+        'Sold to Open': '#137CBD',
+        'Bought to Close': '#137CBD',
+    }
+}
 
 
-@app.callback(
-    Output('hover-data', 'children'),
-    [Input('basic-interactions', 'hoverData')])
-def display_hover_data(hoverData):
-    return json.dumps(hoverData, indent=2)
+class DASHboard:
+    def __init__(self):
+        self.app = dash.Dash(
+            __name__,
+            external_stylesheets=[
+            #    "https://codepen.io/chriddyp/pen/bWLwgP.css"
+            ]
+        )
 
+        self.conn = sqlite3.connect(PROJECT_DB_PATH)
 
-@app.callback(
-    Output('click-data', 'children'),
-    [Input('basic-interactions', 'clickData')])
-def display_click_data(clickData):
-    return json.dumps(clickData, indent=2)
+    def serve(self, debug):
+        self.precompute()
+        self.set_DASHboard_layout()
 
+        # hacky way of separating callbacks into separate files
+        from dashboard.callbacks import charts
+        charts.initialize_charts_callbacks(self.app, LABEL_COLORS)
 
-@app.callback(
-    Output('selected-data', 'children'),
-    [Input('basic-interactions', 'selectedData')])
-def display_selected_data(selectedData):
-    return json.dumps(selectedData, indent=2)
+        self.app.run_server(debug=debug)
 
+    def precompute(self):
+        self.portfolio_stocks_list = [stock for stock in requests.get('http://127.0.0.1:5000/portfolio/stocks').json().keys()]
 
-@app.callback(
-    Output('relayout-data', 'children'),
-    [Input('basic-interactions', 'relayoutData')])
-def display_relayout_data(relayoutData):
-    return json.dumps(relayoutData, indent=2)
+    def set_DASHboard_layout(self):
+        self.app.layout = html.Div(#style={'backgroundColor': self.colors['background']}, 
+            children=[
+            html.Label(
+                [
+                    "Select a stock from the portfolio",
+                    dcc.Dropdown(
+                        id="ticker-dropdown",
+                        options=[{'label': ticker, 'value': ticker} for ticker in self.portfolio_stocks_list],
+                        placeholder="enter ticker here",
+                        value='AC',
+                    )
+                ],
+                #style={
+                #    'color': self.colors['text']
+                #}
+            ),
+            html.Label(
+                [
+                    "Select a trading strategy",
+                    dcc.Dropdown(
+                        id="strategy-dropdown",
+                        options=[{'label': 'covered call', 'value': 'covered call'}],
+                        placeholder="enter strategy name here",
+                        value='covered call',
+                    )
+                ],
+                #style={
+                #    'color': self.colors['text']
+                #}
+            ),
+            daq.ToggleSwitch(
+                id='forgone-upside-toggle',
+                value=False,
+                size=SIZES['toggles'],
+                color=COLORS['toggles'],
+                label='Show forgone upside from assignment',
+                labelPosition='left',
+                #style={
+                #    'color': self.colors['text']
+                #}
+            ),
+            dcc.Graph(
+                id='ticker-strategy-performance-graph',
+                figure={},
+                config={"displayModeBar": True, "scrollZoom": True},
+            ),
+            dcc.Graph(
+                id='ticker-options-timing-graph',
+                figure={},
+                config={"displayModeBar": True, "scrollZoom": True},
+            ),
+            html.Div(id='shitty-redis', children=[], style={'display': 'none'})
+            ]
+        )
 
-
-if __name__ == '__main__':
-    app.run_server(debug=True)

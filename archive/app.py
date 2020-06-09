@@ -54,7 +54,7 @@ def option(ID):
 
         instruments.option.replace_one(
             filter={'ID': ID},
-            replacement={},  # TODO
+            replacement={},
             upsert=True
         )
 

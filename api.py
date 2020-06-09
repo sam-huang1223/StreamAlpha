@@ -55,7 +55,14 @@ def ticker_info(ticker):
     with sqlite3.connect(PROJECT_DB_PATH) as conn:
         result = queries.execute_sql(conn, queries.sql_get_ticker_currency.format(ticker=ticker))[0]
 
-    return {'name': result[0], 'currency': result[1]}
+    return {'name': result[0], 'currency': result[1]}, 200
+
+@app.route('/portfolio/stocks', methods = ['GET'])
+def portfolio_stocks():
+    with sqlite3.connect(PROJECT_DB_PATH) as conn:
+        result = queries.execute_sql(conn, queries.sql_get_all_stocks_traded)
+    
+    return {row[0]: row[1] for row in result}, 200
         
 
 if __name__ == '__main__':
