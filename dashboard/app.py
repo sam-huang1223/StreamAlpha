@@ -32,6 +32,15 @@ COLORS = {
     'toggles': '#293742',
 }
 
+LINE_COLORS = {
+
+}
+
+GRAPH_REGIONS = {
+    'red': '',
+    'green': '',
+}
+
 SIZES = {
     'background': '#',
     'text': '#',
@@ -53,7 +62,7 @@ LABEL_COLORS = {
 
 SYMBOLS = {
     'shape': {
-        'Expired': 'triangle-up',
+        'Expired': 'hourglass',
         'Assigned': 'square',
         'Sold to Open': 'triangle-right',
         'Bought to Close': 'triangle-left',
@@ -83,8 +92,8 @@ class DASHboard:
         self.set_DASHboard_layout()
 
         # hacky way of separating callbacks into separate files
-        from dashboard.callbacks import charts
-        charts.initialize_charts_callbacks(self.app, LABEL_COLORS)
+        from dashboard.callbacks import drivers
+        drivers.initialize_charts_callbacks(self.app)
 
         self.app.run_server(debug=debug)
 
@@ -134,12 +143,7 @@ class DASHboard:
                 #}
             ),
             dcc.Graph(
-                id='ticker-strategy-performance-graph',
-                figure={},
-                config={"displayModeBar": True, "scrollZoom": True},
-            ),
-            dcc.Graph(
-                id='ticker-options-timing-graph',
+                id='all-subplots',
                 figure={},
                 config={"displayModeBar": True, "scrollZoom": True},
             ),

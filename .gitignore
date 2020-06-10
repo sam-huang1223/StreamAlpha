@@ -9,6 +9,7 @@ scratch/**
 # don't track senstitive files
 credentials.ini
 **/*.db
+**/*.vscode
 
 # don't track these extensions
 **/*.DS_Store

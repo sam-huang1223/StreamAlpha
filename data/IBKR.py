@@ -32,8 +32,8 @@ DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
 
 class IBKR:
     def __init__(self):
-        self._setup()
         self.connected = False
+        self._setup()
 
     def _setup(self):
         print('Initializing IBKR Connection...\n')
@@ -91,7 +91,7 @@ class IBKR:
 
         # if there are new entries, parse the updated tradelog into db
         print('Checking Tradelog...')
-        if (datetime.now() - tradelog_datetime).days > 0:
+        if (datetime.now().day - tradelog_datetime.day) > 0:
             self.query_flexreport('420983', savepath=TRADELOG_PATH)
             print('Updating Tradelog...')
             self._update_tradelog_db(last_updated=tradelog_datetime)
@@ -99,7 +99,7 @@ class IBKR:
         
         # if there are new entries, parse the updated dividend history in db
         print('Checking Dividend History..')
-        if (datetime.now() - dividend_history_datetime).days > 0:
+        if (datetime.now().day - dividend_history_datetime.day) > 0:
             self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=dividend_history_datetime)
@@ -112,7 +112,7 @@ class IBKR:
         if self.connected:
             self.disconnect()
 
-    def connect(self, read_only):
+    def connect(self, read_only=True):
         self.client.connect('127.0.0.1', 7496, clientId=1, readonly=read_only)
         self.connected = True
         print('Connected to IB TWS')
@@ -137,7 +137,7 @@ class IBKR:
             ib_insync.flexreport._logger.info('Flex Query has been saved at {}'.format(savepath))
         except Exception as e:
             print(e.message, e.args)
-            raise ConnectionError
+            raise e
 
     def parse_tradelog(self, loadpath):
         print('Parsing tradelog...')
@@ -167,7 +167,7 @@ class IBKR:
         # filter for new orders to insert into the database
         for record in last_tradelog.iter('Order'):
             # orders occured on the same day do not get updated in the tradelog until the day after
-            if datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S').date() >= last_updated.date():
+            if datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S') >= last_updated:
                 order = SimpleNamespace(**record.attrib)
                 schema.insert_trade(self.conn, models.Trade(order))
 
@@ -180,7 +180,7 @@ class IBKR:
         # filter for new dividends to insert into the database
 
         for record in last_dividend_history.iter('ChangeInDividendAccrual'):
-            if datetime.strptime(record.attrib['exDate'], '%Y%m%d').date() >= last_updated.date():
+            if datetime.strptime(record.attrib['exDate'], '%Y%m%d') >= last_updated:
                 dividend = SimpleNamespace(**record.attrib)
                 schema.insert_dividend(self.conn, models.Dividend(dividend))
                 

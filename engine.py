@@ -1,8 +1,12 @@
 import configparser
 import ib_insync
 import sqlite3
+from shutil import get_terminal_size
 
 import pandas as pd
+pd.set_option('display.max_columns', 500)
+pd.set_option('display.width', get_terminal_size()[0])
+
 import numpy as np
 
 from data import IBKR
@@ -140,9 +144,18 @@ class Covered_Calls_Strat:
 
         df.at[0, 'value_delta'] = df.at[0, 'total_cost_basis']
 
-        df['cumulative_value'] = df['value_delta'].cumsum()
         df['cumulative_commissions'] = df['commission'].cumsum().abs()
+        df['cumulative_value'] = df['value_delta'].cumsum()  # excludes comissions
+        df['cumulative_profit'] = df['cumulative_value'] - df['cumulative_commissions'] - df.at[0, "cumulative_value"]
         df['cumulative_cash_investment'] = df['total'].cumsum()  # excludes commissions
+        df['cumulative_underlying_quantity'] = df[pd.isnull(df['option_id'])]['quantity'].cumsum()
+        df['cumulative_underlying_quantity'].fillna(0, inplace=True)
+
+        df['yield_on_value'] = (df["cumulative_profit"] / df['cumulative_value'])
+        df['yield_on_cash'] = (df["cumulative_profit"] / df['cumulative_cash_investment'])
+
+        #print(df)
+        #raise SystemError
 
         # --- derived columns --- #
         df['time_series_flag'] = True
@@ -160,7 +173,7 @@ class Covered_Calls_Strat:
         # compute values for end state of trade (e.g. assigned, expired, bought back, % pnl)
         for order in df.itertuples():
             if not order.Index == 0:
-                delta = (df.at[order.Index, "cumulative_value"] / starting_value) - 1
+                delta = df.at[order.Index, 'yield_on_value']
 
                 if df.at[order.Index, "cumulative_value"] > df.at[order.Index - 1, "cumulative_value"]:
                     df.at[order.Index, "cumulative_value_percent_change_label"] = "{}%".format(round(delta*100, 2))
@@ -201,7 +214,7 @@ class Covered_Calls_Strat:
                     df.at[order.Index, 'trade_end_state_symbol'] = SYMBOLS['shape']['Expired']
                     df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Expired']
 
-        return df[['execution_time', 'fxRateToBase', 'commission', 'value_delta', 'cumulative_value', 'cumulative_commissions', 'cumulative_cash_investment', 'option_id', 'strike', 'expiry', 'time_series_flag', 'cumulative_value_percent_change_label', 'negative_change_flag', 'positive_change_flag', 'trade_end_state', 'trade_end_state_symbol', 'trade_end_state_symbol_color']]
+        return df[['execution_time', 'fxRateToBase', 'commission', 'value_delta', 'cumulative_value', 'yield_on_value', 'cumulative_profit', 'cumulative_commissions', 'cumulative_cash_investment', 'yield_on_cash', 'cumulative_underlying_quantity', 'option_id', 'strike', 'expiry', 'time_series_flag', 'cumulative_value_percent_change_label', 'negative_change_flag', 'positive_change_flag', 'trade_end_state', 'trade_end_state_symbol', 'trade_end_state_symbol_color']]
 
 
 
