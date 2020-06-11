@@ -4,11 +4,13 @@ store/historic/**
 store/twitter/**
 store/backups/**
 store/temp/**
-scratch/**
 
 # don't track senstitive files
 credentials.ini
 **/*.db
+
+# don't track these scratch files
+test.py
 
 # don't track these extensions
 **/*.DS_Store

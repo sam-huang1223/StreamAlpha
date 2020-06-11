@@ -89,7 +89,7 @@ def initialize_charts_callbacks(app):
 
         historical_prices = requests.get(
             'http://127.0.0.1:5000/historical/price/{ticker}'.format(ticker=ticker), 
-            data={'start': min_date.day, 'end': max_date.day}
+            data={'start_day': min_date.day, 'end_day': max_date.day}
         )
         historical_prices_df = pd.DataFrame.from_dict(historical_prices.json())
 

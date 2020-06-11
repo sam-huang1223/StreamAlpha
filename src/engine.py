@@ -25,25 +25,56 @@ PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 pd.options.mode.chained_assignment = None
 #
 
-class Engine:
-    def __init__(self, connect=True):
+# TODO find datasource mapping tickers to industries + industry indices
+
+class Engine(IBKR):
+    def __init__(self):
         """
         This class contains various methods th
         """
-        if connect:
-            self.IBKR = IBKR()
+        super(Engine, self).__init__()
 
-    def populate_historical_prices(self, ticker, start_time, end_time):
-        #contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+    def populate_historical_prices_minute(self, ticker, start_time, end_time):
+        """
+        Historic data requests from IB API has a timeout issue - therefore, we need to break up requests into smaller chunks
+
+        :param ticker: [description]
+        :type ticker: [type]
+        :param start_time: [description]
+        :type start_time: [type]
+        :param end_time: [description]
+        :type end_time: [type]
+        :return: [description]
+        :rtype: [type]
+        """
+        #  endDateTime=''
         
-        self.IBKR.get_security_historical()
+        with sqlite3.connect(PROJECT_DB_PATH) as conn:
+            contract_id = queries.execute_sql(conn, queries.sql_get_ticker_contract_id.format(ticker=ticker))[0][0]
+            min_date_db = queries.execute_sql(conn, queries.sql_get_earliest_price_datetime_minute.format(ticker=ticker))
+            max_date_db = queries.execute_sql(conn, queries.sql_get_latest_price_datetime_minute.format(ticker=ticker))
 
+        # if the database has no data on this ticker
+        if not min_date_db or max_date_db:
+            self.get_security_historical_price(
+                contract_id=contract_id,
+                durationStr='1 M',
+                barSizeSetting='1 min',
+                whatToShow='TRADES',
+                useRTH = True,
+            )
+
+        # if the database already contains enough data 
+        elif start_time > min_date_db and end_time < max_date_db:
+            return queries.execute_sql(queries.sql_get_price_minute)
+
+        #self.IBKR.get_security_historical()
         # TODO minute by minute data (always ensure 1 continuous block of min by min data in the DB)
 
 
-class Covered_Calls_Strat:
-    def __init__(self, engine):
-        self.engine = engine
+class Covered_Calls_Strat(Engine):
+    def __init__(self):
+        super(Covered_Calls_Strat, self).__init__()
 
     def get_trades(self, conn, ticker, start_time=None, end_time=None):
         """
@@ -215,7 +246,3 @@ class Covered_Calls_Strat:
                     df.at[order.Index, 'trade_end_state_symbol_color'] = SYMBOLS['color']['Expired']
 
         return df[['execution_time', 'fxRateToBase', 'commission', 'value_delta', 'cumulative_value', 'yield_on_value', 'cumulative_profit', 'cumulative_commissions', 'cumulative_cash_investment', 'yield_on_cash', 'cumulative_underlying_quantity', 'option_id', 'strike', 'expiry', 'time_series_flag', 'cumulative_value_percent_change_label', 'negative_change_flag', 'positive_change_flag', 'trade_end_state', 'trade_end_state_symbol', 'trade_end_state_symbol_color']]
-
-
-
-        

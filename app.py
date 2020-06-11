@@ -72,5 +72,6 @@ def get_historical_price(ticker):
         result = {}
     return result, 200
         
+# for testing
 if __name__ == '__main__':
     app.run()

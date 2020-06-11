@@ -23,6 +23,8 @@ TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
 TRADELOG_BACKUP_PATH = config['Backup Paths']['TRADELOG_BACKUP_PATH']
 DIVIDEND_HISTORY_BACKUP_PATH = config['Backup Paths']['DIVIDED_HISTORY_BACKUP_PATH']
 DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
+TRADE_HISTORY_FLEX_REPORT_ID = config['IB Flex Report IDs']['TRADE_HISTORY']
+DIVIDEND_HISTORY_FLEX_REPORT_ID = config['IB Flex Report IDs']['DIVIDEND_HISTORY']
 # ---------------------------------------------------------------------------- #
 
 class IBKR:
@@ -56,12 +58,12 @@ class IBKR:
         if not self.conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
             schema.db_creation_script(self.conn)
             print('Loading tradelog...')
-            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
             self.parse_tradelog(loadpath=TRADELOG_PATH)
             last_trade_datetime = datetime.now()
 
             print('Loading dividend history...')
-            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
             self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
             last_dividend_date = datetime.now()
 
@@ -76,7 +78,7 @@ class IBKR:
         except OSError:
             # create tradelog if it doesn't exist
             print('Generating Tradelog...\n')
-            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
 
         # update dividend history if last update was more than 1 day ago
         if not last_dividend_date:
@@ -89,16 +91,16 @@ class IBKR:
         except OSError:
             # create dividend history if it doesn't exist
             print('Generating Dividend History...\n')
-            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
 
-        # hypothesis -> new trades from today can be retrieved after 9pm 
-        after_trading_hours_today = datetime.now().replace(hour=21,minute=0,second=0,microsecond=0)
+        # hypothesis -> new trades from today can be retrieved after midnight 
+        after_trading_hours_today = datetime.now().replace(hour=23,minute=59,second=0,microsecond=0)
 
         # if there are new entries, parse the updated tradelog into db
         print('Checking Tradelog...')
         if (datetime.now().day - last_trade_datetime.day) > 0 and datetime.now() > after_trading_hours_today:
             move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
-            self.query_flexreport('420983', savepath=TRADELOG_PATH)
+            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
             print('Updating Tradelog...')
             self._update_tradelog_db(last_updated=last_trade_datetime)
         print('Tradelog is up-to-date\n')
@@ -107,7 +109,7 @@ class IBKR:
         print('Checking Dividend History..')
         if (datetime.now().day - last_dividend_date.day) > 0 and datetime.now() > after_trading_hours_today:
             move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
-            self.query_flexreport('421808', savepath=DIVIDEND_HISTORY_PATH)
+            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=last_dividend_date)
         print('Dividend History is up-to-date\n')
@@ -195,7 +197,7 @@ class IBKR:
 
         self.conn.commit()
 
-    def get_security_historical(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+    def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
         """
 
         Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
@@ -231,16 +233,10 @@ class IBKR:
                 df['minute'] = df['date'].str.split(" ").str[1].str.split(':').str[1]
             else:
                 raise ValueError("price data with bar size of {} cannot be inserted into the database".format(barSizeSetting))
-        
-            start_date = df['date'].min()
-            end_date = df['date'].max()
-            sql_execute = queries.sql_get_existing_records_dates.format(table=price_history_table, ib_id = contract_id, start_date=start_date, end_date=end_date)
             
             df['mid'] = (df['high'] + df['low']) / 2
             
-            dates_already_in_db = [date[0] for date in queries.execute_sql(self.conn, sql_execute)]
-            df_new_records = df[~df['date'].isin(dates_already_in_db)]
-            schema.insert_price_history(price_history_table, self.conn, df_new_records)
+            schema.insert_price_history(price_history_table, self.conn, df)
 
         return df
 

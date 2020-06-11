@@ -1,13 +1,3 @@
-sql_get_existing_records_dates = """
-    SELECT date 
-    FROM {table}
-    WHERE 
-        ib_id = '{ib_id}'
-    AND 
-        date BETWEEN '{start_date}' AND '{end_date}' 
-    ORDER BY date ASC
-"""
-
 sql_get_covered_calls_trades_stock = """
     SELECT quantity, price, execution_time, commission, total, base_total, total_cost_basis, pnl_realized, fxRateToBase
     FROM Trade
@@ -36,6 +26,12 @@ sql_get_ticker_currency = """
     WHERE stock_id = '{ticker}'
 """
 
+sql_get_ticker_contract_id = """
+    SELECT ib_id
+    FROM Stock
+    WHERE stock_id = '{ticker}'
+"""
+
 sql_get_all_stocks_traded = """
     SELECT DISTINCT stock_id, ib_id
     FROM Stock
@@ -54,6 +50,31 @@ sql_get_last_dividend_datetime = """
     FROM Dividend_History
     ORDER BY ex_date DESC
     LIMIT 1
+"""
+
+sql_get_earliest_price_datetime_minute = """
+    SELECT date
+    FROM Price_History_Minute
+    WHERE stock_id = '{ticker}'
+    ORDER BY date ASC
+    LIMIT 1
+"""
+
+sql_get_latest_price_datetime_minute = """
+    SELECT date
+    FROM Price_History_Minute
+    WHERE stock_id = '{ticker}'
+    ORDER BY date DESC
+    LIMIT 1
+"""
+
+sql_get_price_minute = """
+    SELECT *
+    FROM Price_History_Minute
+    WHERE stock_id = '{ticker}'
+    AND date >= '{start_date}' 
+    AND date <= '{end_date}'
+    ORDER BY date DESC
 """
 
 #sql_

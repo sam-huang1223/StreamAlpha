@@ -16,6 +16,25 @@ Note: most features require an active (i.e. open and logged in) instance of [Tra
 2. Create the necessary [Flex Queries](https://www.interactivebrokers.com/en/software/singlefunds/topics/flexqueries.htm) from the Interactive Brokers Account Management interface
    1. Create a Flex Query for your trading history
    2. Create a Flex Query for your dividend history
+3. Replace the flex report IDs in config.ini with your own IDs - the resulting section should look like:
+   ```
+   [IB Flex Report IDs]
+   TRADE_HISTORY = YOUR_TRADING_HISTORY_FLEX_QUERY_ID
+   DIVIDEND_HISTORY = YOUR_DIVIDEND_HISTORY_FLEX_QUERY_ID
+   ```
+4. Create a Flex Report API token ([instructions](https://www.interactivebrokers.ca/en/software/am/am/reports/flex_web_service_version_3.htm))
+   1. Create a `credentials.ini` file in the root directory, with the contents below
+      ```
+      [IB API]
+      IBKR_FLEXREPORT_TOKEN = YOUR_TOKEN_HERE
+      ```
+
+## Caveats
+1. Given that the database (SQLite) and server (Flask) are both hosted locally, all market data must be downloaded at runtime (exactly once, for it to populate in the database)
+2. To download market data, you must have market data subscriptions. For US securities, I have found the two subscriptions below to be sufficient:
+   1. NASDAQ (Network C/UTP)
+   2. NYSE (Network A/CTA)
+3. You can purchase market data subscriptions via TWS, go to Account -> Subscribe to Market Data/Research. If you don't have / don't want market data subscriptions, you can still use the portfolio analytics dashboard, just ___
 
 ---
 

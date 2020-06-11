@@ -15,4 +15,5 @@ print(engine.IBKR.get_security_historical(
 dashboard = DASHboard()
 dashboard.serve(debug=True)
 
+# TODO - create flag to enable usage without market data permissions
 # TODO - write "destroy script to reset db + xml files"
