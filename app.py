@@ -4,8 +4,8 @@ import configparser
 import sqlite3
 import json
 
-from engine import Engine, Covered_Calls_Strat
-import utils.sql_queries as queries
+from .src.engine import Engine, Covered_Calls_Strat
+from .src.data.utils import sql_queries as queries
 
 # admin
 config = configparser.ConfigParser()
@@ -22,6 +22,7 @@ app = Flask(__name__)
 app.debug = True
 
 engine = Engine()
+# -------------------------------------------
 
 @app.route('/portfolio/strategy/<ticker>', methods = ['GET'])
 def portfolio_strategy(ticker):
@@ -50,20 +51,26 @@ def portfolio_strategy(ticker):
             cumulative_positions = covered_call.calculate_cumulative_positions(stock_trades, call_trades)
             return cumulative_positions.to_dict(), 200, {'schema': '*insert schema here'}
 
-@app.route('/<ticker>', methods = ['GET'])
-def ticker_info(ticker):
-    with sqlite3.connect(PROJECT_DB_PATH) as conn:
-        result = queries.execute_sql(conn, queries.sql_get_ticker_currency.format(ticker=ticker))[0]
-
-    return {'name': result[0], 'currency': result[1]}, 200
-
 @app.route('/portfolio/stocks', methods = ['GET'])
 def portfolio_stocks():
     with sqlite3.connect(PROJECT_DB_PATH) as conn:
         result = queries.execute_sql(conn, queries.sql_get_all_stocks_traded)
     
     return {row[0]: row[1] for row in result}, 200
-        
 
+@app.route('/info/<ticker>', methods = ['GET'])
+def ticker_info(ticker):
+    with sqlite3.connect(PROJECT_DB_PATH) as conn:
+        result = queries.execute_sql(conn, queries.sql_get_ticker_currency.format(ticker=ticker))[0]
+
+    return {'name': result[0], 'currency': result[1]}, 200
+
+@app.route('/historical/price/<ticker>', methods = ['GET'])
+def get_historical_price(ticker):
+    with sqlite3.connect(PROJECT_DB_PATH) as conn:
+        #result = queries.execute_sql(conn, queries.sql_get_ticker_currency.format(ticker=ticker))[0]
+        result = {}
+    return result, 200
+        
 if __name__ == '__main__':
     app.run()

@@ -42,5 +42,21 @@ sql_get_all_stocks_traded = """
     ORDER BY stock_id ASC
 """
 
+sql_get_last_trade_datetime = """
+    SELECT execution_time 
+    FROM Trade
+    ORDER BY execution_time DESC
+    LIMIT 1
+"""
+
+sql_get_last_dividend_datetime = """
+    SELECT ex_date 
+    FROM Dividend_History
+    ORDER BY ex_date DESC
+    LIMIT 1
+"""
+
+#sql_
+
 def execute_sql(conn, query_string):
     return conn.cursor().execute(query_string).fetchall()

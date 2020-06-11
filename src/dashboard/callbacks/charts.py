@@ -7,15 +7,13 @@ import plotly.graph_objects as go
 
 import pandas as pd
 
-from dashboard.app import LABEL_COLORS
-from dashboard.callbacks.helper import unfuck_gridlines
+from ..settings import LABEL_COLORS
+from .helper import unfuck_gridlines
 
 
 def update_ticker_strategy_performance_graph(fig, processed_df, plot_row, plot_col):
     cumulative_positions_time_series = processed_df[processed_df['time_series_flag']]
     
-    #ticker_info = requests.get('http://127.0.0.1:5000/{ticker}'.format(ticker=ticker)).json()
-
     fig.add_trace(
         go.Scatter(
             x=cumulative_positions_time_series['execution_time'],

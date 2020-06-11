@@ -1,16 +1,16 @@
 # don't track contents of these folders
-data/robintrack/**
-data/historic/**
-data/twitter/**
-data/db_backups/**
-data/temp/**
+store/robintrack/**
+store/historic/**
+store/twitter/**
+store/backups/**
+store/temp/**
 scratch/**
 
 # don't track senstitive files
 credentials.ini
 **/*.db
-**/*.vscode
 
 # don't track these extensions
 **/*.DS_Store
 **/__pycache__
+**/*.vscode

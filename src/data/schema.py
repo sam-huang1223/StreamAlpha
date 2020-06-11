@@ -1,3 +1,5 @@
+from .utils import sql_views as views
+
 # SQL create table statement for the trade table (based on schema from models.Trade)
 CREATE_TABLE_TRADE = """ 
 CREATE TABLE IF NOT EXISTS Trade (
@@ -130,6 +132,7 @@ def db_creation_script(conn):
 
     print('Initializing the StreamAlpha database - \n') # convert to log
 
+    # tables
     c.execute(CREATE_TABLE_STOCK)
     c.execute(CREATE_TABLE_OPTION)
     c.execute(CREATE_TABLE_TRADE)
@@ -137,6 +140,9 @@ def db_creation_script(conn):
     c.execute(CREATE_TABLE_PRICE_HISTORY_DAY)
     c.execute(CREATE_TABLE_PRICE_HISTORY_HOUR)
     c.execute(CREATE_TABLE_PRICE_HISTORY_MINUTE)
+
+    # views
+    c.execute(views.MOST_RECENT_TRADES)
 
     print('Setup complete! All tables have been created') # convert to log
 

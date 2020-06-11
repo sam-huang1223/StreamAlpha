@@ -9,9 +9,9 @@ pd.set_option('display.width', get_terminal_size()[0])
 
 import numpy as np
 
-from data import IBKR
-from utils import sql_queries as queries
-from dashboard.app import SYMBOLS
+from .data.IBKR import IBKR
+from .data.utils import sql_queries as queries
+from .dashboard.settings import SYMBOLS
 
 # admin
 config = configparser.ConfigParser()
@@ -38,7 +38,7 @@ class Engine:
         
         self.IBKR.get_security_historical()
 
-        # TODO
+        # TODO minute by minute data (always ensure 1 continuous block of min by min data in the DB)
 
 
 class Covered_Calls_Strat:

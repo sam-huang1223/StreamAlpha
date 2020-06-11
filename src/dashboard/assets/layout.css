@@ -1,0 +1,10 @@
+#toggles-div {
+    height: 15%;
+    width: 20%;
+    background-color: powderblue;
+    position: relative;
+    left: 50px;
+    border: 3px solid #73AD21;
+    margin: 10px;
+    padding: 5px;
+}
