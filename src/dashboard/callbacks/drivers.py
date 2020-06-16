@@ -20,6 +20,7 @@ from numpy import nan
 import pandas as pd
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', get_terminal_size()[0])
+pd.options.mode.chained_assignment = None  # get rid of SettingWithCopyWarning
 
 from ...data.utils import sql_queries as queries
 from . import charts
@@ -60,7 +61,7 @@ def initialize_charts_callbacks(app):
             max_date = now
         
             last_row = df.iloc[[-1]]
-            last_row['execution_time'] = datetime.today().replace(microsecond=0)
+            last_row['execution_time'] = str(datetime.today().replace(microsecond=0))
             last_row['commission'] = 0
             last_row['expiry'] = nan
             last_row['strike'] = nan
@@ -92,6 +93,7 @@ def initialize_charts_callbacks(app):
             data={'start_day': min_date.day, 'end_day': max_date.day}
         )
         historical_prices_df = pd.DataFrame.from_dict(historical_prices.json())
+
 
         return json.dumps(
             {

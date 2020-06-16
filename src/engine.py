@@ -1,13 +1,15 @@
 import configparser
 import ib_insync
 import sqlite3
-from shutil import get_terminal_size
 
+from shutil import get_terminal_size
 import pandas as pd
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', get_terminal_size()[0])
+pd.options.mode.chained_assignment = None  # get rid of SettingWithCopyWarning
 
 import numpy as np
+from datetime import datetime
 
 from .data.IBKR import IBKR
 from .data.utils import sql_queries as queries
@@ -22,21 +24,24 @@ TRADELOG_PATH = config['XML Paths']['TRADELOG_PATH']
 DIVIDEND_HISTORY_PATH = config['XML Paths']['DIVIDEND_HISTORY_PATH']
 PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 
-pd.options.mode.chained_assignment = None
+"""
+alternative data sources -> https://www.noeticoptions.com/ (track predictive power?)    
+"""
 #
 
 # TODO find datasource mapping tickers to industries + industry indices
 
 class Engine(IBKR):
-    def __init__(self):
+    def __init__(self, update_backsups):
         """
         This class contains various methods th
         """
-        super(Engine, self).__init__()
+        super(Engine, self).__init__(update_backsups)
 
     def populate_historical_prices_minute(self, ticker, start_time, end_time):
         """
         Historic data requests from IB API has a timeout issue - therefore, we need to break up requests into smaller chunks
+            for minute data -> 1 month at a time works well
 
         :param ticker: [description]
         :type ticker: [type]
@@ -46,35 +51,45 @@ class Engine(IBKR):
         :type end_time: [type]
         :return: [description]
         :rtype: [type]
-        """
-        #  endDateTime=''
-        
+        """        
+
         with sqlite3.connect(PROJECT_DB_PATH) as conn:
             contract_id = queries.execute_sql(conn, queries.sql_get_ticker_contract_id.format(ticker=ticker))[0][0]
+
             min_date_db = queries.execute_sql(conn, queries.sql_get_earliest_price_datetime_minute.format(ticker=ticker))
             max_date_db = queries.execute_sql(conn, queries.sql_get_latest_price_datetime_minute.format(ticker=ticker))
 
         # if the database has no data on this ticker
-        if not min_date_db or max_date_db:
+        if not min_date_db or not max_date_db:
             self.get_security_historical_price(
                 contract_id=contract_id,
-                durationStr='1 M',
+                durationStr='30 D',
                 barSizeSetting='1 min',
                 whatToShow='TRADES',
                 useRTH = True,
             )
 
+        min_date_db = min_date_db[0][0]
+        max_date_db = max_date_db[0][0]
+
+        #endDateTime = datetime(2020, 5, 12),
+
         # if the database already contains enough data 
-        elif start_time > min_date_db and end_time < max_date_db:
-            return queries.execute_sql(queries.sql_get_price_minute)
+        #if start_time > min_date_db and end_time < max_date_db:
+        #    return queries.execute_sql(queries.sql_get_price_minute)
+
+        # TODO get data month by month (endDate is not inclusive) 
+        #   -> while loop to return new durationStr and endDate?
+        
 
         #self.IBKR.get_security_historical()
         # TODO minute by minute data (always ensure 1 continuous block of min by min data in the DB)
+             
 
 
-class Covered_Calls_Strat(Engine):
+class Covered_Calls_Strat:
     def __init__(self):
-        super(Covered_Calls_Strat, self).__init__()
+        pass
 
     def get_trades(self, conn, ticker, start_time=None, end_time=None):
         """
@@ -175,20 +190,22 @@ class Covered_Calls_Strat(Engine):
 
         df.at[0, 'value_delta'] = df.at[0, 'total_cost_basis']
 
+        # ----------------------- cumulative summation columns ----------------------- #
         df['cumulative_commissions'] = df['commission'].cumsum().abs()
         df['cumulative_value'] = df['value_delta'].cumsum()  # excludes comissions
         df['cumulative_profit'] = df['cumulative_value'] - df['cumulative_commissions'] - df.at[0, "cumulative_value"]
         df['cumulative_cash_investment'] = df['total'].cumsum()  # excludes commissions
-        df['cumulative_underlying_quantity'] = df[pd.isnull(df['option_id'])]['quantity'].cumsum()
+
+        df['cumulative_underlying_quantity'] = df[pd.isnull(df['option_id'])]['quantity']
         df['cumulative_underlying_quantity'].fillna(0, inplace=True)
+        df['cumulative_underlying_quantity'] = df['cumulative_underlying_quantity'].cumsum()
 
         df['yield_on_value'] = (df["cumulative_profit"] / df['cumulative_value'])
         df['yield_on_cash'] = (df["cumulative_profit"] / df['cumulative_cash_investment'])
+        # ---------------------------------------------------------------------------- #
 
-        #print(df)
-        #raise SystemError
 
-        # --- derived columns --- #
+        # ----------------------- derived columns for graphing ----------------------- #
         df['time_series_flag'] = True
         df['cumulative_value_percent_change_label'] = pd.Series(None, dtype='str')
         df['negative_change_flag'] = pd.Series(None, dtype='bool')
@@ -197,7 +214,7 @@ class Covered_Calls_Strat(Engine):
         df['trade_end_state'] = pd.Series(None, dtype='str')
         df['trade_end_state_symbol'] = pd.Series(None, dtype='str')
         df['trade_end_state_symbol_color'] = pd.Series(None, dtype='str')
-        # --- #
+        # ---------------------------------------------------------------------------- #
 
         starting_value = df.at[0, "cumulative_value"]
 

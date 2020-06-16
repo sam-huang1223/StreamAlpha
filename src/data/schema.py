@@ -1,4 +1,14 @@
+import configparser
+import sqlite3
+
 from .utils import sql_views as views
+
+config = configparser.ConfigParser()
+with open('config.ini') as f:
+    config.read_file(f)
+
+PROJECT_DB_PATH_TEMP = config['DB Path']['PROJECT_DB_PATH_TEMP']
+PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
 
 # SQL create table statement for the trade table (based on schema from models.Trade)
 CREATE_TABLE_TRADE = """ 
@@ -126,11 +136,21 @@ CREATE TABLE IF NOT EXISTS Price_History_Minute (
                                     );
 """
 
+def transfer_table(db_c, table_name):
+    db_c.execute(
+        """
+        INSERT INTO other.{table}
+        SELECT * FROM main.{table};
+        """.format(
+            table = table_name,
+        )
+    )
+
 
 def db_creation_script(conn):
     c = conn.cursor()
 
-    print('Initializing the StreamAlpha database - \n') # convert to log
+    print('Initializing the StreamAlpha database ...') # convert to log
 
     # tables
     c.execute(CREATE_TABLE_STOCK)
@@ -144,9 +164,28 @@ def db_creation_script(conn):
     # views
     c.execute(views.MOST_RECENT_TRADES)
 
-    print('Setup complete! All tables have been created') # convert to log
+    print('All tables have been created \n') # convert to log
 
     conn.commit()
+
+    print("Transfering price history data from temporary database...\n") # convert to log
+
+    temp_db_conn = sqlite3.connect(PROJECT_DB_PATH_TEMP)
+    temp_db_c = temp_db_conn.cursor()
+
+    temp_db_c.execute("""
+        ATTACH DATABASE '{db_path}' AS other;
+        """.format(db_path=PROJECT_DB_PATH)
+    )
+
+    transfer_table(temp_db_c, 'Price_History_Day')
+    transfer_table(temp_db_c, 'Price_History_Hour')
+    transfer_table(temp_db_c, 'Price_History_Minute')
+
+    temp_db_conn.commit()
+
+    print("Database setup complete! ") # convert to log
+
 
 def insert_trade(conn, trade):
     """
@@ -249,9 +288,10 @@ def insert_dividend(c, dividend):
     c.execute(sql, params)
 
     print(
-        "Successfully parsed {symbol}'s dividend of {net_total} to be paid on {pay_date}".format(
+        "Successfully parsed {symbol}'s dividend of {net_total} announced on {ex_date} to be paid on {pay_date}".format(
                 symbol=dividend.stock_id,
                 net_total=dividend.net_total,
+                ex_date=dividend.ex_date,
                 pay_date=dividend.pay_date,
             )
     ) # convert print statement to log

@@ -46,7 +46,7 @@ def portfolio_strategy(ticker):
         except KeyError:
             end_time = None
         if data['strategy'] == 'covered_call':
-            covered_call = Covered_Calls_Strat(engine)
+            covered_call = Covered_Calls_Strat()
             stock_trades, call_trades = covered_call.get_trades(conn, ticker, start_time, end_time)
             cumulative_positions = covered_call.calculate_cumulative_positions(stock_trades, call_trades)
             return cumulative_positions.to_dict(), 200, {'schema': '*insert schema here'}

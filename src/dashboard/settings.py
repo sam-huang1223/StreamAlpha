@@ -8,6 +8,10 @@ LINE_COLORS = {
 
 }
 
+FILL_COLORS = {
+    'underlying_quantity': '#78D5CC'
+}
+
 GRAPH_REGIONS = {
     'red': '',
     'green': '',
@@ -21,13 +25,13 @@ SIZES = {
 
 LABEL_COLORS = {
     'positive': {
-        'bg': '#62D96B',
-        'text': '#1D7324',
+        'bg': '#29A634',
+        'text': 'white',
         'border': '#29A634',
     },
     'negative': {
-        'bg': '#FF7373',
-        'text': '#A82A2A',
+        'bg': '#DB3737',
+        'text': 'white',
         'border': '#DB3737',
     }
 }

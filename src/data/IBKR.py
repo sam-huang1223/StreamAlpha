@@ -5,7 +5,7 @@ import configparser
 import xml.etree.ElementTree as ET
 from shutil import move
 
-from datetime import datetime
+import datetime
 from types import SimpleNamespace
 
 from . import models
@@ -28,8 +28,9 @@ DIVIDEND_HISTORY_FLEX_REPORT_ID = config['IB Flex Report IDs']['DIVIDEND_HISTORY
 # ---------------------------------------------------------------------------- #
 
 class IBKR:
-    def __init__(self):
+    def __init__(self, update_backups=False):
         self.connected = False
+        self.update_backups = update_backups
         self._setup()
 
     def _setup(self):
@@ -60,16 +61,16 @@ class IBKR:
             print('Loading tradelog...')
             self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
             self.parse_tradelog(loadpath=TRADELOG_PATH)
-            last_trade_datetime = datetime.now()
+            last_trade_datetime = datetime.datetime.now()
 
             print('Loading dividend history...')
             self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
             self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
-            last_dividend_date = datetime.now()
+            last_dividend_date = datetime.datetime.now()
 
         # update tradelog if last update was more than 1 day ago
         if not last_trade_datetime:
-            last_trade_datetime = datetime.strptime(
+            last_trade_datetime = datetime.datetime.strptime(
                 queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
                 '%Y-%m-%d %H:%M:%S'
             )
@@ -82,7 +83,7 @@ class IBKR:
 
         # update dividend history if last update was more than 1 day ago
         if not last_dividend_date:
-            last_dividend_date = datetime.strptime(
+            last_dividend_date = datetime.datetime.strptime(
                 queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
                 '%Y-%m-%d'
             )
@@ -94,12 +95,12 @@ class IBKR:
             self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
 
         # hypothesis -> new trades from today can be retrieved after midnight 
-        after_trading_hours_today = datetime.now().replace(hour=23,minute=59,second=0,microsecond=0)
-
         # if there are new entries, parse the updated tradelog into db
         print('Checking Tradelog...')
-        if (datetime.now().day - last_trade_datetime.day) > 0 and datetime.now() > after_trading_hours_today:
-            move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
+        if (datetime.datetime.now().day - last_trade_datetime.day) > 1:
+            if self.update_backups:
+                move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
+
             self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
             print('Updating Tradelog...')
             self._update_tradelog_db(last_updated=last_trade_datetime)
@@ -107,8 +108,10 @@ class IBKR:
         
         # if there are new entries, parse the updated dividend history in db
         print('Checking Dividend History..')
-        if (datetime.now().day - last_dividend_date.day) > 0 and datetime.now() > after_trading_hours_today:
-            move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
+        if (datetime.datetime.now().day - last_dividend_date.day) > 1:
+            if self.update_backups:
+                move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
+
             self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=last_dividend_date)
@@ -177,7 +180,7 @@ class IBKR:
         # filter for new orders to insert into the database
         for record in last_tradelog.iter('Order'):
             # orders occured on the same day do not get updated in the tradelog until the day after
-            if datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S') > last_updated:
+            if datetime.datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S') > last_updated:
                 order = SimpleNamespace(**record.attrib)
                 schema.insert_trade(self.conn, models.Trade(order))
 
@@ -190,7 +193,7 @@ class IBKR:
         # filter for new dividends to insert into the database
 
         for record in last_dividend_history.iter('ChangeInDividendAccrual'):
-            if datetime.strptime(record.attrib['exDate'], '%Y%m%d') > last_updated:
+            if datetime.datetime.strptime(record.attrib['exDate'], '%Y%m%d') > last_updated:
                 dividend = SimpleNamespace(**record.attrib)
                 schema.insert_dividend(self.conn, models.Dividend(dividend))
                 

@@ -7,8 +7,8 @@ import plotly.graph_objects as go
 
 import pandas as pd
 
-from ..settings import LABEL_COLORS
-from .helper import unfuck_gridlines
+from ..settings import LABEL_COLORS, FILL_COLORS
+from .helper import unfuck_gridlines, hex_to_rgb
 
 
 def update_ticker_strategy_performance_graph(fig, processed_df, plot_row, plot_col):
@@ -34,6 +34,8 @@ def update_ticker_strategy_performance_graph(fig, processed_df, plot_row, plot_c
             name='Underlying Quantity Held',
             line_shape='hv',
             fill='tozeroy',
+            mode='none',
+            fillcolor=f"rgba{(*hex_to_rgb(FILL_COLORS['underlying_quantity']), 0.75)}",
         ),
         plot_row,
         plot_col,
@@ -56,7 +58,8 @@ def update_ticker_strategy_performance_graph(fig, processed_df, plot_row, plot_c
             text=row.cumulative_value_percent_change_label,
             font={'color': text_color},
             bgcolor=bg_color,
-            bordercolor=border_color,
+            arrowcolor=bg_color,
+            bordercolor=bg_color,
             hovertext=row.option_id,
             #hovertemplate="name: %{y}%{x}<br>number: %{marker.symbol}<extra></extra>"))
         )
@@ -64,10 +67,14 @@ def update_ticker_strategy_performance_graph(fig, processed_df, plot_row, plot_c
         xref="x",
         yref="y",
         showarrow=True,
-        arrowhead=7,
-        ax=0,
+        ax=-10,
         ay=-20,
-        font={'size':12},
+        font={'size':11},
+        arrowhead=7,
+        arrowsize=1,
+        arrowwidth=2.5,
+        borderwidth=2,
+        opacity=0.8
     ))
 
     fig.update_yaxes(
