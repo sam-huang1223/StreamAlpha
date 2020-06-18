@@ -68,7 +68,7 @@ class IBKR:
             self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
             last_dividend_date = datetime.datetime.now()
 
-        # update tradelog if last update was more than 1 day ago
+        # get datetime of last trade
         if not last_trade_datetime:
             last_trade_datetime = datetime.datetime.strptime(
                 queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
@@ -76,12 +76,14 @@ class IBKR:
             )
         try:
             doc = ET.parse(TRADELOG_PATH)
+            tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
+            tradelog_datetime = datetime.datetime.strptime(tradelog_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
             # create tradelog if it doesn't exist
             print('Generating Tradelog...\n')
             self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
 
-        # update dividend history if last update was more than 1 day ago
+        # get date of last dividend
         if not last_dividend_date:
             last_dividend_date = datetime.datetime.strptime(
                 queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
@@ -89,6 +91,8 @@ class IBKR:
             )
         try:
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
+            dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
+            dividend_history_datetime = datetime.datetime.strptime(dividend_history_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
             # create dividend history if it doesn't exist
             print('Generating Dividend History...\n')
@@ -97,7 +101,7 @@ class IBKR:
         # hypothesis -> new trades from today can be retrieved after midnight 
         # if there are new entries, parse the updated tradelog into db
         print('Checking Tradelog...')
-        if (datetime.datetime.now().day - last_trade_datetime.day) > 1:
+        if (datetime.datetime.now().day - last_trade_datetime.day) > 1 and (datetime.datetime.now().day - tradelog_datetime.day) > 0:
             if self.update_backups:
                 move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
 
@@ -108,7 +112,7 @@ class IBKR:
         
         # if there are new entries, parse the updated dividend history in db
         print('Checking Dividend History..')
-        if (datetime.datetime.now().day - last_dividend_date.day) > 1:
+        if (datetime.datetime.now().day - last_dividend_date.day) > 1 and (datetime.datetime.now().day - dividend_history_datetime.day) > 0:
             if self.update_backups:
                 move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
 

@@ -9,6 +9,7 @@ from ..schema import \
 CREATE_TABLE_PRICE_HISTORY_DAY, \
 CREATE_TABLE_PRICE_HISTORY_HOUR, \
 CREATE_TABLE_PRICE_HISTORY_MINUTE, \
+CREATE_TABLE_STOCK_INDICES, \
 transfer_table
 
 # ----------------------------------- admin ---------------------------------- #
@@ -35,7 +36,7 @@ def reset_datastore():
     allows the price history data downloaded from IB to be preserved over time
     (slowly removing issue of IB API being slow)
 
-    ** This assumes that the schema for the price history tables do not change (why would it?)
+    ** This assumes that the schema for the transferred tables do not change (it shouldn't)
     """ 
 
     # ---------------------------------- Step 1 ---------------------------------- #
@@ -51,15 +52,16 @@ def reset_datastore():
     if exists(PROJECT_DB_PATH_TEMP):
         remove(PROJECT_DB_PATH_TEMP)
 
-    print('Creating the temporary price history database ... \n') # convert to log
+    print('Creating the temporary history database ... \n') # convert to log
     temp_db_conn = sqlite3.connect(PROJECT_DB_PATH_TEMP)
     temp_db_c = temp_db_conn.cursor()
     temp_db_c.execute(CREATE_TABLE_PRICE_HISTORY_DAY)
     temp_db_c.execute(CREATE_TABLE_PRICE_HISTORY_HOUR)
     temp_db_c.execute(CREATE_TABLE_PRICE_HISTORY_MINUTE)
+    temp_db_c.execute(CREATE_TABLE_STOCK_INDICES)
     temp_db_conn.commit()
 
-    print('Copying over price history data from current database ... \n') # convert to log
+    print('Copying over historic data from current database ... \n') # convert to log
     db_conn = sqlite3.connect(PROJECT_DB_PATH)
     db_c = db_conn.cursor()
     db_c.execute("""
@@ -70,11 +72,10 @@ def reset_datastore():
     transfer_table(db_c, 'Price_History_Day')
     transfer_table(db_c, 'Price_History_Hour')
     transfer_table(db_c, 'Price_History_Minute')
+    transfer_table(db_c, 'Stock_Indices')
 
     db_conn.commit()
-
     # ---------------------------------------------------------------------------- #
-
 
     # ---------------------------------- Step 3 ---------------------------------- #
     print('Removing current database ... \n') # convert to log

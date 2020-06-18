@@ -9,7 +9,7 @@ pd.set_option('display.width', get_terminal_size()[0])
 pd.options.mode.chained_assignment = None  # get rid of SettingWithCopyWarning
 
 import numpy as np
-from datetime import datetime
+import datetime as dt
 
 from .data.IBKR import IBKR
 from .data.utils import sql_queries as queries
@@ -29,7 +29,7 @@ alternative data sources -> https://www.noeticoptions.com/ (track predictive pow
 """
 #
 
-# TODO find datasource mapping tickers to industries + industry indices
+# TODO find datasource mapping tickers to industries to industry indices
 
 class Engine(IBKR):
     def __init__(self, update_backsups):
@@ -37,6 +37,64 @@ class Engine(IBKR):
         This class contains various methods th
         """
         super(Engine, self).__init__(update_backsups)
+
+        # ----------------------------- Define Constants ----------------------------- #
+        # due to Interactive Broker's API being slow, these constants define "optimal"
+        # time intervals for the retrieval of price history (e.g. get minute by minute
+        # data 30 days at a time)
+        self.MIN_DATA_INTERVAL = dt.timedelta(days=30)
+        self.HOUR_DATA_INTERVAL = dt.timedelta(days=365)
+        self.DAY_DATA_INTERVAL = dt.timedelta(days=3650) 
+        # ---------------------------------------------------------------------------- #
+
+    def _get_price_history_from_api_minute(self, contract_id, start_time, end_time):
+        """
+        This function chunks requests into multiple API calls, and returns a combined output
+
+        :param start_time: [description]
+        :type start_time: [type]
+        :param end_time: [description]
+        :type end_time: [type]
+        """
+        # Logic for pulling data from the API in chunks (due to IB API being super slow with large requests)
+        # Will always ensure database contains one continuous block of data
+
+        df = None  # the final concatenated output
+        duration = self.MIN_DATA_INTERVAL.days  # number of days of data requested for each API call
+        end  = end_time  # intermediate variable to keep track of date range window
+
+        flag = True
+        while flag:
+            start = end - self.MIN_DATA_INTERVAL
+            if start < start_time:  # if True, would be the last API call (reached end of date range requested)
+                duration = (end - start_time).days + 1
+                flag = False
+            
+            df_chunk = self.IBKR.get_security_historical(
+                    contract_id=contract_id, 
+                    durationStr="{days} days".format(days=duration), 
+                    barSizeSetting='1 min', 
+                    whatToShow='TRADES', 
+                    useRTH=True, 
+                    endDateTime=end, 
+                    updateDB=False  # TODO change to True
+            )
+            if df:
+                df = pd.concat([df, df_chunk], sort=False, ignore_index=True)
+            else:
+                df = df_chunk
+            end = start
+
+        return df  # TODO verify this output
+        """
+        df.sort_values('', axis=0, ascending=True, inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        df.plot.line(x='', y='')  # visual verification
+        import matplotlib.pyplot as plt
+        plt.show()
+        return df
+        """
+
 
     def populate_historical_prices_minute(self, ticker, start_time, end_time):
         """
@@ -60,31 +118,15 @@ class Engine(IBKR):
             max_date_db = queries.execute_sql(conn, queries.sql_get_latest_price_datetime_minute.format(ticker=ticker))
 
         # if the database has no data on this ticker
-        if not min_date_db or not max_date_db:
-            self.get_security_historical_price(
-                contract_id=contract_id,
-                durationStr='30 D',
-                barSizeSetting='1 min',
-                whatToShow='TRADES',
-                useRTH = True,
-            )
+        if not min_date_db and not max_date_db:
+            return self._get_price_history_from_api_minute(contract_id, start_time, end_time)
 
         min_date_db = min_date_db[0][0]
         max_date_db = max_date_db[0][0]
 
-        #endDateTime = datetime(2020, 5, 12),
-
-        # if the database already contains enough data 
-        #if start_time > min_date_db and end_time < max_date_db:
-        #    return queries.execute_sql(queries.sql_get_price_minute)
-
-        # TODO get data month by month (endDate is not inclusive) 
-        #   -> while loop to return new durationStr and endDate?
-        
-
-        #self.IBKR.get_security_historical()
-        # TODO minute by minute data (always ensure 1 continuous block of min by min data in the DB)
-             
+        # if the database already contains enough data, pull directly from the database
+        if start_time >= min_date_db and end_time <= max_date_db:
+            return queries.execute_sql(conn, queries.sql_get_price_minute.format(ticker=ticker, start_date=start_time, end_date=end_time))
 
 
 class Covered_Calls_Strat:

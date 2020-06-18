@@ -20,7 +20,7 @@ from plotly import tools
 
 from ..data.utils import sql_queries as queries
 
-# --- execute necessary prelimary steps --- #config = configparser.ConfigParser()
+# --- execute necessary prelimary steps ---
 config = configparser.ConfigParser()
 with open('config.ini') as f:
     config.read_file(f)

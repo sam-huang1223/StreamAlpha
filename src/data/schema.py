@@ -136,6 +136,16 @@ CREATE TABLE IF NOT EXISTS Price_History_Minute (
                                     );
 """
 
+CREATE_TABLE_STOCK_INDICES = """
+CREATE TABLE IF NOT EXISTS Stock_Indices (
+                                    stock_id VARCHAR(16) NOT NULL,
+                                    name TEXT NOT NULL,
+                                    category TEXT NOT NULL,
+                                    weight DECIMAL NOT NULL
+                                    );
+"""
+
+
 def transfer_table(db_c, table_name):
     db_c.execute(
         """
@@ -160,6 +170,7 @@ def db_creation_script(conn):
     c.execute(CREATE_TABLE_PRICE_HISTORY_DAY)
     c.execute(CREATE_TABLE_PRICE_HISTORY_HOUR)
     c.execute(CREATE_TABLE_PRICE_HISTORY_MINUTE)
+    c.execute(CREATE_TABLE_STOCK_INDICES)
 
     # views
     c.execute(views.MOST_RECENT_TRADES)
@@ -181,6 +192,7 @@ def db_creation_script(conn):
     transfer_table(temp_db_c, 'Price_History_Day')
     transfer_table(temp_db_c, 'Price_History_Hour')
     transfer_table(temp_db_c, 'Price_History_Minute')
+    transfer_table(temp_db_c, 'Stock_Indices')
 
     temp_db_conn.commit()
 
@@ -296,8 +308,7 @@ def insert_dividend(c, dividend):
             )
     ) # convert print statement to log
 
-def insert_price_history(whichTable, conn, prices_df):
-    prices_df.to_sql(whichTable, con=conn, if_exists='append', index=False)
-
+def insert_price_history(table_name, conn, prices_df):
+    prices_df.to_sql(table_name, con=conn, if_exists='append', index=False)
 
 # sqlite_master is equivalent of MySQL's information_schema
