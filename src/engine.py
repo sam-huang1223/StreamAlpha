@@ -29,10 +29,8 @@ alternative data sources -> https://www.noeticoptions.com/ (track predictive pow
 """
 #
 
-# TODO find datasource mapping tickers to industries to industry indices
-
 class Engine(IBKR):
-    def __init__(self, update_backsups):
+    def __init__(self, update_backsups=True):
         """
         This class contains various methods th
         """
@@ -128,6 +126,9 @@ class Engine(IBKR):
         if start_time >= min_date_db and end_time <= max_date_db:
             return queries.execute_sql(conn, queries.sql_get_price_minute.format(ticker=ticker, start_date=start_time, end_date=end_time))
 
+
+        # if the database contains partial data, but still need to pull more data from API 
+        # TODO 
 
 class Covered_Calls_Strat:
     def __init__(self):

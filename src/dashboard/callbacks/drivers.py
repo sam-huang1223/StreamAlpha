@@ -6,6 +6,7 @@ import dash_core_components as dcc
 import dash_html_components as html
 import dash_bootstrap_components as dbc
 import dash_daq as daq
+from dash_table import DataTable
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -23,9 +24,9 @@ pd.set_option('display.width', get_terminal_size()[0])
 pd.options.mode.chained_assignment = None  # get rid of SettingWithCopyWarning
 
 from ...data.utils import sql_queries as queries
+from ...data.etfdb import get_benchmark_indices
 from . import charts
 from .. import settings
-
 
 def initialize_charts_callbacks(app):
     @app.callback(
@@ -210,6 +211,15 @@ def initialize_layout_callbacks(app, portfolio_stocks):
                     #    'color': self.colors['text']
                     #}
                 ),
+                # TODO convert this to a DataTable 
+                """
+                dcc.Dropdown(
+                    id="benchmark-index-dropdown",
+                    options=None,
+                    placeholder="choose an index to benchmark against",
+                    value=None
+                ),
+                """
             ]),
             dcc.Graph(
                 id='all-subplots',

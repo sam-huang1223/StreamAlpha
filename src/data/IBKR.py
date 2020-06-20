@@ -3,7 +3,7 @@ import ib_insync
 import sqlite3
 import configparser
 import xml.etree.ElementTree as ET
-from shutil import move
+from shutil import move, copyfile
 
 import datetime
 from types import SimpleNamespace
@@ -52,71 +52,69 @@ class IBKR:
         else:
             self.conn = sqlite3.connect(':memory:')
 
-        last_trade_datetime = None
-        last_dividend_date = None
-
         # run creation script if DB is empty
         if not self.conn.cursor().execute("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';").fetchall():
             schema.db_creation_script(self.conn)
-            print('Loading tradelog...')
-            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
-            self.parse_tradelog(loadpath=TRADELOG_PATH)
-            last_trade_datetime = datetime.datetime.now()
-
-            print('Loading dividend history...')
-            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
-            self.parse_dividend_history(loadpath=DIVIDEND_HISTORY_PATH)
-            last_dividend_date = datetime.datetime.now()
 
         # get datetime of last trade
-        if not last_trade_datetime:
-            last_trade_datetime = datetime.datetime.strptime(
-                queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
-                '%Y-%m-%d %H:%M:%S'
-            )
+        last_trade_datetime = datetime.datetime.strptime(
+            queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
+            '%Y-%m-%d %H:%M:%S'
+        )
         try:
             doc = ET.parse(TRADELOG_PATH)
+            if self.update_backups:
+                move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
             tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
             tradelog_datetime = datetime.datetime.strptime(tradelog_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
-            # create tradelog if it doesn't exist
-            print('Generating Tradelog...\n')
-            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
+            tradelog_datetime = None
 
         # get date of last dividend
-        if not last_dividend_date:
-            last_dividend_date = datetime.datetime.strptime(
-                queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
-                '%Y-%m-%d'
-            )
+        last_dividend_date = datetime.datetime.strptime(
+            queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
+            '%Y-%m-%d'
+        )
         try:
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
+            if self.update_backups:
+                move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
             dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
             dividend_history_datetime = datetime.datetime.strptime(dividend_history_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
-            # create dividend history if it doesn't exist
-            print('Generating Dividend History...\n')
-            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
+            dividend_history_datetime = None
 
         # hypothesis -> new trades from today can be retrieved after midnight 
         # if there are new entries, parse the updated tradelog into db
         print('Checking Tradelog...')
-        if (datetime.datetime.now().day - last_trade_datetime.day) > 1 and (datetime.datetime.now().day - tradelog_datetime.day) > 0:
-            if self.update_backups:
-                move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
-
-            self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
+        empty_trade_table = not last_trade_datetime  # if Trade table is empty
+        out_of_date_trade_table = not tradelog_datetime or (datetime.datetime.now().day - last_trade_datetime.day) > 1 and (datetime.datetime.now().day - tradelog_datetime.day) > 0
+        
+        if empty_trade_table or out_of_date_trade_table:
+            print('Downloading Tradelog...')
+            try:
+                self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
+            except ib_insync.flexreport.FlexError as download_error:
+                # if cannot download for whatever reason (e.g. API limit exceeded), use backup
+                copyfile(TRADELOG_BACKUP_PATH, TRADELOG_PATH)
+                print(download_error)
             print('Updating Tradelog...')
             self._update_tradelog_db(last_updated=last_trade_datetime)
         print('Tradelog is up-to-date\n')
         
         # if there are new entries, parse the updated dividend history in db
         print('Checking Dividend History..')
-        if (datetime.datetime.now().day - last_dividend_date.day) > 1 and (datetime.datetime.now().day - dividend_history_datetime.day) > 0:
-            if self.update_backups:
-                move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
-
-            self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
+        empty_dividend_history_table = not last_dividend_date  # if Dividend_History table is empty
+        out_of_date_dividend_history_table = not dividend_history_datetime or (datetime.datetime.now().day - last_dividend_date.day) > 1 and (datetime.datetime.now().day - dividend_history_datetime.day) > 0
+        
+        if empty_dividend_history_table or out_of_date_dividend_history_table:
+            print('Downloading Dividend History...')
+            try:
+                self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
+            except ib_insync.flexreport.FlexError as download_error:
+                # if cannot download for whatever reason (e.g. API limit exceeded), use backup
+                copyfile(DIVIDEND_HISTORY_BACKUP_PATH, DIVIDEND_HISTORY_PATH)
+                print(download_error)
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=last_dividend_date)
         print('Dividend History is up-to-date\n')
@@ -147,36 +145,11 @@ class IBKR:
         :param savepath: output path for xml file
         :return: N/A (only writes to log)
         """
-        print('Downloading...')
-        try:
-            trades = ib_insync.FlexReport(self.IBKR_FLEXREPORT_TOKEN, queryID)
-            trades.save(savepath)
-            ib_insync.flexreport._logger.info('Flex Query has been saved at {}'.format(savepath))
-        except Exception as e:
-            print(e.message, e.args)
-            raise e
-
-    def parse_tradelog(self, loadpath):
-        print('Parsing tradelog...')
-        report = ib_insync.FlexReport(path=loadpath)
-        
-        # convert all mentions of Trade to Order
-        for order in report.extract('Order'):  # don't use "Trade" as an order may be fulfilled with multiple trades
-            schema.insert_trade(self.conn, models.Trade(order))
-
-        self.conn.commit()
-
-    def parse_dividend_history(self, loadpath):
-        print('Parsing dividend history...')
-        dividend_history = ib_insync.FlexReport(path=loadpath)
-        
-        for dividend in dividend_history.extract('ChangeInDividendAccrual'):
-            div = models.Dividend(dividend)
-            # only consider accrued dividend postings (i.e. not reversals on paid out dividends) <- assumes dividends don't get cancelled
-            if div.code == 'Po':
-                schema.insert_dividend(self.conn, div)
-        
-        self.conn.commit()
+        report = ib_insync.FlexReport(self.IBKR_FLEXREPORT_TOKEN, queryID)
+        report.save(savepath)
+        print("Download Complete!\n")
+        # convert below to project logging
+        ib_insync.flexreport._logger.info('Flex Query has been saved at {}'.format(savepath))
 
     def _update_tradelog_db(self, last_updated):
         last_tradelog = ET.parse(TRADELOG_PATH)
@@ -184,7 +157,7 @@ class IBKR:
         # filter for new orders to insert into the database
         for record in last_tradelog.iter('Order'):
             # orders occured on the same day do not get updated in the tradelog until the day after
-            if datetime.datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S') > last_updated:
+            if not last_updated or datetime.datetime.strptime(record.attrib['dateTime'], '%Y%m%d;%H%M%S') > last_updated:
                 order = SimpleNamespace(**record.attrib)
                 schema.insert_trade(self.conn, models.Trade(order))
 
@@ -197,7 +170,7 @@ class IBKR:
         # filter for new dividends to insert into the database
 
         for record in last_dividend_history.iter('ChangeInDividendAccrual'):
-            if datetime.datetime.strptime(record.attrib['exDate'], '%Y%m%d') > last_updated:
+            if not last_updated or datetime.datetime.strptime(record.attrib['exDate'], '%Y%m%d') > last_updated:
                 dividend = SimpleNamespace(**record.attrib)
                 schema.insert_dividend(self.conn, models.Dividend(dividend))
                 

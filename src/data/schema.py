@@ -2,6 +2,7 @@ import configparser
 import sqlite3
 
 from .utils import sql_views as views
+from .utils import sql_queries as queries
 
 config = configparser.ConfigParser()
 with open('config.ini') as f:
@@ -147,14 +148,28 @@ CREATE TABLE IF NOT EXISTS Stock_Indices (
 
 
 def transfer_table(db_c, table_name):
+    column_names = queries.get_table_column_names(db_c, table_name)
+
     db_c.execute(
         """
-        INSERT INTO other.{table}
-        SELECT * FROM main.{table};
+        INSERT INTO other.{table} ({columns})
+        SELECT {columns} FROM main.{table};
         """.format(
             table = table_name,
+            columns = ", ".join(column_names)
         )
     )
+
+DB_TABLE_CREATION_SCRIPTS = [
+    CREATE_TABLE_STOCK,
+    CREATE_TABLE_OPTION,
+    CREATE_TABLE_TRADE,
+    CREATE_TABLE_DIVIDEND_HISTORY,
+    CREATE_TABLE_PRICE_HISTORY_DAY,
+    CREATE_TABLE_PRICE_HISTORY_HOUR,
+    CREATE_TABLE_PRICE_HISTORY_MINUTE,
+    CREATE_TABLE_STOCK_INDICES,
+]
 
 
 def db_creation_script(conn):
@@ -163,15 +178,8 @@ def db_creation_script(conn):
     print('Initializing the StreamAlpha database ...') # convert to log
 
     # tables
-    c.execute(CREATE_TABLE_STOCK)
-    c.execute(CREATE_TABLE_OPTION)
-    c.execute(CREATE_TABLE_TRADE)
-    c.execute(CREATE_TABLE_DIVIDEND_HISTORY)
-    c.execute(CREATE_TABLE_PRICE_HISTORY_DAY)
-    c.execute(CREATE_TABLE_PRICE_HISTORY_HOUR)
-    c.execute(CREATE_TABLE_PRICE_HISTORY_MINUTE)
-    c.execute(CREATE_TABLE_STOCK_INDICES)
-
+    for table_creation_script in DB_TABLE_CREATION_SCRIPTS:
+        c.execute(table_creation_script)
     # views
     c.execute(views.MOST_RECENT_TRADES)
 
@@ -189,14 +197,16 @@ def db_creation_script(conn):
         """.format(db_path=PROJECT_DB_PATH)
     )
 
-    transfer_table(temp_db_c, 'Price_History_Day')
-    transfer_table(temp_db_c, 'Price_History_Hour')
-    transfer_table(temp_db_c, 'Price_History_Minute')
-    transfer_table(temp_db_c, 'Stock_Indices')
+    TEMP_DB_TABLE_NAMES = queries.get_all_tables(temp_db_c)
+
+    # transfer all tables
+    for table_name in TEMP_DB_TABLE_NAMES:
+        transfer_table(temp_db_c, table_name)
 
     temp_db_conn.commit()
 
     print("Database setup complete! ") # convert to log
+    # TODO how to print line break?
 
 
 def insert_trade(conn, trade):

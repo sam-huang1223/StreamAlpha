@@ -77,7 +77,42 @@ sql_get_price_minute = """
     ORDER BY date DESC
 """
 
-#sql_
+def get_table_column_names(c, table_name):
+    return [
+        column[1] for column in c.execute(
+            """
+            PRAGMA table_info({table_name})
+            """.format(table_name=table_name)
+        ).fetchall()
+    ]
+
+def get_all_tables(c):
+    return [table[0] for table in
+        c.execute("""
+            SELECT 
+                name
+            FROM 
+                sqlite_master 
+            WHERE 
+                type ='table' AND name NOT LIKE 'sqlite_%';
+        """).fetchall()
+    ]
 
 def execute_sql(conn, query_string):
     return conn.cursor().execute(query_string).fetchall()
+
+# for testing purposes
+if __name__ == '__main__':
+    import sqlite3
+    import configparser
+    config = configparser.ConfigParser()
+    with open('config.ini') as f:
+        config.read_file(f)
+
+    PROJECT_DB_PATH_TEMP = config['DB Path']['PROJECT_DB_PATH_TEMP']
+    PROJECT_DB_PATH = config['DB Path']['PROJECT_DB_PATH']
+
+    temp_db_conn = sqlite3.connect(PROJECT_DB_PATH_TEMP)
+    temp_db_c = temp_db_conn.cursor()
+
+    print(get_all_tables(temp_db_c))
