@@ -206,7 +206,7 @@ def db_creation_script(conn):
     temp_db_conn.commit()
 
     print("Database setup complete! ") # convert to log
-    # TODO how to print line break?
+    print("-" * 40)
 
 
 def insert_trade(conn, trade):

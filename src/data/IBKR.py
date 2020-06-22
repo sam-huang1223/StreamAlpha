@@ -4,9 +4,11 @@ import sqlite3
 import configparser
 import xml.etree.ElementTree as ET
 from shutil import move, copyfile
+from os.path import exists
 
 import datetime
 from types import SimpleNamespace
+from pandas import to_datetime
 
 from . import models
 from . import schema
@@ -63,8 +65,6 @@ class IBKR:
         )
         try:
             doc = ET.parse(TRADELOG_PATH)
-            if self.update_backups:
-                move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
             tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
             tradelog_datetime = datetime.datetime.strptime(tradelog_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
@@ -77,8 +77,6 @@ class IBKR:
         )
         try:
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
-            if self.update_backups:
-                move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
             dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
             dividend_history_datetime = datetime.datetime.strptime(dividend_history_datetime_str, '%Y%m%d;%H%M%S')
         except OSError:
@@ -93,6 +91,8 @@ class IBKR:
         if empty_trade_table or out_of_date_trade_table:
             print('Downloading Tradelog...')
             try:
+                if self.update_backups and exists(TRADELOG_PATH):
+                    move(TRADELOG_PATH, TRADELOG_BACKUP_PATH)
                 self.query_flexreport(TRADE_HISTORY_FLEX_REPORT_ID, savepath=TRADELOG_PATH)
             except ib_insync.flexreport.FlexError as download_error:
                 # if cannot download for whatever reason (e.g. API limit exceeded), use backup
@@ -103,13 +103,15 @@ class IBKR:
         print('Tradelog is up-to-date\n')
         
         # if there are new entries, parse the updated dividend history in db
-        print('Checking Dividend History..')
+        print('Checking Dividend History...')
         empty_dividend_history_table = not last_dividend_date  # if Dividend_History table is empty
         out_of_date_dividend_history_table = not dividend_history_datetime or (datetime.datetime.now().day - last_dividend_date.day) > 1 and (datetime.datetime.now().day - dividend_history_datetime.day) > 0
         
         if empty_dividend_history_table or out_of_date_dividend_history_table:
             print('Downloading Dividend History...')
             try:
+                if self.update_backups and exists(DIVIDEND_HISTORY_PATH):
+                    move(DIVIDEND_HISTORY_PATH, DIVIDEND_HISTORY_BACKUP_PATH)
                 self.query_flexreport(DIVIDEND_HISTORY_FLEX_REPORT_ID, savepath=DIVIDEND_HISTORY_PATH)
             except ib_insync.flexreport.FlexError as download_error:
                 # if cannot download for whatever reason (e.g. API limit exceeded), use backup
@@ -119,7 +121,8 @@ class IBKR:
             self._update_dividend_history_db(last_updated=last_dividend_date)
         print('Dividend History is up-to-date\n')
         
-        print('IBKR Connection Successfully Established\n')
+        print('IBKR Connection Successfully Established')
+        print("-" * 40)
 
     def __del__(self):
         self.conn.close()
@@ -177,12 +180,14 @@ class IBKR:
 
         self.conn.commit()
 
-    def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', updateDB=True):
+    def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', startDateTime='', updateDB=True):
         """
 
         Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
         """
         assert self.connected, "Must connect to IBKR's Trader Workstation application before using this function"
+
+        print('\t[IBKR] pulling historic price data for {days} trading days to {end}'.format(days=durationStr, end=endDateTime))
 
         # create contract object uing the unique contract ID
         contract = ib_insync.Contract(conId = contract_id)
@@ -200,7 +205,7 @@ class IBKR:
             df['stock_id'] = contract.symbol
             df['ib_id'] = contract_id
             df = df.astype({"date": str})
-            df = df.drop(columns=['average', 'barCount'])
+            df = df.drop(columns=['barCount'])
 
             if 'day' in barSizeSetting:
                 price_history_table = 'Price_History_Day'
@@ -214,8 +219,14 @@ class IBKR:
             else:
                 raise ValueError("price data with bar size of {} cannot be inserted into the database".format(barSizeSetting))
             
-            df['mid'] = (df['high'] + df['low']) / 2
-            
+            df.rename(columns={'average': 'mid'}, inplace=True)
+            df['date'] = to_datetime(df['date'])
+
+            # checks for adherence to time boundaries if time is specified
+            if type(startDateTime) is datetime.datetime or type(endDateTime) is datetime.datetime:
+                df = df[df.date.between(startDateTime, endDateTime)]
+
+            print(df)
             schema.insert_price_history(price_history_table, self.conn, df)
 
         return df

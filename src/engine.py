@@ -7,8 +7,9 @@ import pandas as pd
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', get_terminal_size()[0])
 pd.options.mode.chained_assignment = None  # get rid of SettingWithCopyWarning
+import pandas_market_calendars as mcal
 
-import numpy as np
+from numpy import busday_count, datetime64
 import datetime as dt
 
 from .data.IBKR import IBKR
@@ -43,6 +44,7 @@ class Engine(IBKR):
         self.MIN_DATA_INTERVAL = dt.timedelta(days=30)
         self.HOUR_DATA_INTERVAL = dt.timedelta(days=365)
         self.DAY_DATA_INTERVAL = dt.timedelta(days=3650) 
+        self.holidays = pd.Series(mcal.get_calendar('NYSE').holidays().holidays)
         # ---------------------------------------------------------------------------- #
 
     def _get_price_history_from_api_minute(self, contract_id, start_time, end_time):
@@ -57,44 +59,72 @@ class Engine(IBKR):
         # Logic for pulling data from the API in chunks (due to IB API being super slow with large requests)
         # Will always ensure database contains one continuous block of data
 
+        print('[Engine] pulling historic price data with IB API from {start} to {end}'.format(start=start_time, end=end_time))
+
         df = None  # the final concatenated output
-        duration = self.MIN_DATA_INTERVAL.days  # number of days of data requested for each API call
+        trading_days = self.MIN_DATA_INTERVAL.days  # number of days of data requested for each API call
+        holidays = self.holidays[self.holidays.between(start_time, end_time)].dt.date.tolist()
         end  = end_time  # intermediate variable to keep track of date range window
+
+        # TODO convert this to multi-threaded calls using -> https://creativedata.stream/multi-threading-api-requests-in-python/
+
+        params_list = []  # list of dictionaries of (start, end, trading_days)
+        dfs_to_concat = []
 
         flag = True
         while flag:
+            interval_bus_days = busday_count((end - self.MIN_DATA_INTERVAL).date(), end.date() + dt.timedelta(days=1), holidays=holidays)
             start = end - self.MIN_DATA_INTERVAL
+
             if start < start_time:  # if True, would be the last API call (reached end of date range requested)
-                duration = (end - start_time).days + 1
+                start = start_time
+                interval_bus_days = busday_count(start.date(), end.date() + dt.timedelta(days=1), holidays=holidays)
                 flag = False
-            
-            df_chunk = self.IBKR.get_security_historical(
+
+            if end == end_time:
+                end_date = end_time
+            else:
+                end_date = end.date()
+
+            if start == start_time:
+                start_date = start_time
+            else:
+                start_date = start.date()
+
+            params_list.append({
+                'start' : start_date,
+                'end' : end_date,
+                'trading_days' : interval_bus_days,
+            })
+
+            end = start
+
+        now = dt.datetime.now()
+
+        for param in params_list:
+            dfs_to_concat.append(
+                self.get_security_historical_price(
                     contract_id=contract_id, 
-                    durationStr="{days} days".format(days=duration), 
+                    durationStr="{days} D".format(days=param['trading_days']), 
                     barSizeSetting='1 min', 
                     whatToShow='TRADES', 
                     useRTH=True, 
-                    endDateTime=end, 
-                    updateDB=False  # TODO change to True
+                    endDateTime=param['end'], 
+                    startDateTime=param['start'],
+                    updateDB=True
+                )
             )
-            if df:
-                df = pd.concat([df, df_chunk], sort=False, ignore_index=True)
-            else:
-                df = df_chunk
-            end = start
 
-        return df  # TODO verify this output
-        """
-        df.sort_values('', axis=0, ascending=True, inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        df.plot.line(x='', y='')  # visual verification
-        import matplotlib.pyplot as plt
-        plt.show()
-        return df
-        """
+        print(dt.datetime.now() - now)
+        # 0:01:07.358942
+        # multi-threaded -> 
+
+        
+        output_df = pd.concat(dfs_to_concat, sort=False, ignore_index=True)
+        return output_df
 
 
-    def populate_historical_prices_minute(self, ticker, start_time, end_time):
+    def populate_historical_prices(self, ticker, start_time, end_time, interval):
         """
         Historic data requests from IB API has a timeout issue - therefore, we need to break up requests into smaller chunks
             for minute data -> 1 month at a time works well
@@ -103,11 +133,14 @@ class Engine(IBKR):
         :type ticker: [type]
         :param start_time: [description]
         :type start_time: [type]
-        :param end_time: [description]
+        :param end_time: a datetime.datetime object specified to the minute (not inclusive)
         :type end_time: [type]
         :return: [description]
         :rtype: [type]
         """        
+        if interval == 'minute':
+            interval = dt.timedelta(minutes=1)
+        # TODO other intervals
 
         with sqlite3.connect(PROJECT_DB_PATH) as conn:
             contract_id = queries.execute_sql(conn, queries.sql_get_ticker_contract_id.format(ticker=ticker))[0][0]
@@ -117,18 +150,52 @@ class Engine(IBKR):
 
         # if the database has no data on this ticker
         if not min_date_db and not max_date_db:
+            print('[Engine] No data in database for {ticker}'.format(ticker=ticker))
             return self._get_price_history_from_api_minute(contract_id, start_time, end_time)
-
-        min_date_db = min_date_db[0][0]
-        max_date_db = max_date_db[0][0]
+        
+        min_date_db = dt.datetime.strptime(min_date_db[0][0], '%Y-%m-%d %H:%M:%S')
+        max_date_db = dt.datetime.strptime(max_date_db[0][0], '%Y-%m-%d %H:%M:%S')
 
         # if the database already contains enough data, pull directly from the database
-        if start_time >= min_date_db and end_time <= max_date_db:
-            return queries.execute_sql(conn, queries.sql_get_price_minute.format(ticker=ticker, start_date=start_time, end_date=end_time))
+        missing_beginning_data = \
+            (start_time < min_date_db and start_time >= min_date_db.replace(hour=9, minute=30)) or \
+            (start_time < min_date_db and start_time <= (min_date_db - dt.timedelta(days=1)).replace(hour=16))
+        missing_end_data = end_time > (max_date_db + interval)  # to account for non-inclusive IB API behaviour
+        
+        dfs_to_concat = []
 
+        if missing_beginning_data: 
+            beginning_df = self._get_price_history_from_api_minute(contract_id, start_time, min_date_db)
+            beginning_df.rename(columns={'average': 'mid'}, inplace=True)
+            dfs_to_concat.append(beginning_df)
 
-        # if the database contains partial data, but still need to pull more data from API 
-        # TODO 
+            start_time = min_date_db
+
+        
+        if missing_end_data:
+            end_df = self._get_price_history_from_api_minute(contract_id, max_date_db + interval, end_time)
+            end_df.rename(columns={'average': 'mid'}, inplace=True)
+            dfs_to_concat.append(end_df)
+
+            end_time = max_date_db
+        
+        print('[Engine] Pulling from database price history for {ticker} between {start} and {end}'.format(
+            ticker=ticker, start=start_time, end=end_time
+        ))
+
+        middle_df = pd.DataFrame(
+                queries.execute_sql(conn, queries.sql_get_price_minute.format(ticker=ticker, start_date=start_time, end_date=end_time)),
+                columns=queries.get_table_column_names(conn.cursor(), 'Price_History_Minute')
+            )
+        middle_df['date'] = pd.to_datetime(middle_df['date'])
+        middle_df.drop(columns=['hour', 'minute', 'ib_id', 'stock_id'], inplace=True)
+        dfs_to_concat.append(middle_df)
+
+        output_df = pd.concat(dfs_to_concat, sort=False, ignore_index=True)
+        output_df.sort_values('date', axis=0, ascending=True, inplace=True)
+        output_df.reset_index(drop=True, inplace=True)
+
+        return output_df
 
 class Covered_Calls_Strat:
     def __init__(self):

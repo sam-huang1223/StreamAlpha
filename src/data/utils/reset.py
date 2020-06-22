@@ -44,4 +44,7 @@ def reset_datastore():
     print('Backing up data from current database ... \n') # convert to log
     if exists(PROJECT_DB_PATH):
         move(PROJECT_DB_PATH, PROJECT_DB_PATH_TEMP)
+
+    print("Environment successfully reset!")
+    print("-" * 40)
     # ---------------------------------------------------------------------------- #
