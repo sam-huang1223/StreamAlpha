@@ -99,8 +99,6 @@ class Engine(IBKR):
 
             end = start
 
-        now = dt.datetime.now()
-
         for param in params_list:
             dfs_to_concat.append(
                 self.get_security_historical_price(
@@ -114,11 +112,6 @@ class Engine(IBKR):
                     updateDB=True
                 )
             )
-
-        print(dt.datetime.now() - now)
-        # 0:01:07.358942
-        # multi-threaded -> 
-
         
         output_df = pd.concat(dfs_to_concat, sort=False, ignore_index=True)
         return output_df
