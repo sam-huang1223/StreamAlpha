@@ -180,7 +180,7 @@ class IBKR:
 
         self.conn.commit()
 
-    def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', startDateTime='', updateDB=True):
+    async def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', startDateTime='', updateDB=True):
         """
 
         Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
@@ -191,13 +191,13 @@ class IBKR:
 
         # create contract object uing the unique contract ID
         contract = ib_insync.Contract(conId = contract_id)
-        self.client.qualifyContracts(contract)
+        await self.client.qualifyContractsAsync(contract)
 
         # use the IBKR API to get historical data
-        bars = self.client.reqHistoricalData(
+        bars = await self.client.reqHistoricalDataAsync(
             contract, endDateTime=endDateTime, durationStr=durationStr,
             barSizeSetting=barSizeSetting, whatToShow=whatToShow, useRTH=useRTH)
-
+        
         # convert to pandas dataframe
         df = ib_insync.util.df(bars)
 

@@ -1,8 +1,10 @@
 import configparser
 import ib_insync
 import sqlite3
+import asyncio
 
 from shutil import get_terminal_size
+from multiprocessing import Process
 import pandas as pd
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', get_terminal_size()[0])
@@ -45,9 +47,10 @@ class Engine(IBKR):
         self.HOUR_DATA_INTERVAL = dt.timedelta(days=365)
         self.DAY_DATA_INTERVAL = dt.timedelta(days=3650) 
         self.holidays = pd.Series(mcal.get_calendar('NYSE').holidays().holidays)
+        self.loop = asyncio.get_event_loop()
         # ---------------------------------------------------------------------------- #
 
-    def _get_price_history_from_api_minute(self, contract_id, start_time, end_time):
+    async def _get_price_history_from_api_minute(self, contract_id, start_time, end_time):
         """
         This function chunks requests into multiple API calls, and returns a combined output
 
@@ -69,7 +72,6 @@ class Engine(IBKR):
         # TODO convert this to multi-threaded calls using -> https://creativedata.stream/multi-threading-api-requests-in-python/
 
         params_list = []  # list of dictionaries of (start, end, trading_days)
-        dfs_to_concat = []
 
         flag = True
         while flag:
@@ -101,8 +103,8 @@ class Engine(IBKR):
 
         now = dt.datetime.now()
 
-        for param in params_list:
-            dfs_to_concat.append(
+        dfs_to_concat = await asyncio.gather(
+            *(
                 self.get_security_historical_price(
                     contract_id=contract_id, 
                     durationStr="{days} D".format(days=param['trading_days']), 
@@ -111,9 +113,10 @@ class Engine(IBKR):
                     useRTH=True, 
                     endDateTime=param['end'], 
                     startDateTime=param['start'],
-                    updateDB=True
-                )
+                    updateDB=True  # CHANGE
+                ) for param in params_list
             )
+        )
 
         print(dt.datetime.now() - now)
         # 0:01:07.358942
@@ -138,6 +141,7 @@ class Engine(IBKR):
         :return: [description]
         :rtype: [type]
         """        
+
         if interval == 'minute':
             interval = dt.timedelta(minutes=1)
         # TODO other intervals
@@ -151,7 +155,7 @@ class Engine(IBKR):
         # if the database has no data on this ticker
         if not min_date_db and not max_date_db:
             print('[Engine] No data in database for {ticker}'.format(ticker=ticker))
-            return self._get_price_history_from_api_minute(contract_id, start_time, end_time)
+            return self.loop.run_until_complete(self._get_price_history_from_api_minute(contract_id, start_time, end_time))
         
         min_date_db = dt.datetime.strptime(min_date_db[0][0], '%Y-%m-%d %H:%M:%S')
         max_date_db = dt.datetime.strptime(max_date_db[0][0], '%Y-%m-%d %H:%M:%S')
@@ -165,7 +169,7 @@ class Engine(IBKR):
         dfs_to_concat = []
 
         if missing_beginning_data: 
-            beginning_df = self._get_price_history_from_api_minute(contract_id, start_time, min_date_db)
+            beginning_df = self.loop.run_until_complete(self._get_price_history_from_api_minute(contract_id, start_time, min_date_db))
             beginning_df.rename(columns={'average': 'mid'}, inplace=True)
             dfs_to_concat.append(beginning_df)
 
@@ -173,7 +177,7 @@ class Engine(IBKR):
 
         
         if missing_end_data:
-            end_df = self._get_price_history_from_api_minute(contract_id, max_date_db + interval, end_time)
+            end_df = self.loop.run_until_complete(self._get_price_history_from_api_minute(contract_id, max_date_db + interval, end_time))
             end_df.rename(columns={'average': 'mid'}, inplace=True)
             dfs_to_concat.append(end_df)
 
