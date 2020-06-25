@@ -66,8 +66,6 @@ class Engine(IBKR):
         holidays = self.holidays[self.holidays.between(start_time, end_time)].dt.date.tolist()
         end  = end_time  # intermediate variable to keep track of date range window
 
-        # TODO convert this to multi-threaded calls using -> https://creativedata.stream/multi-threading-api-requests-in-python/
-
         params_list = []  # list of dictionaries of (start, end, trading_days)
         dfs_to_concat = []
 
@@ -131,11 +129,15 @@ class Engine(IBKR):
         :return: [description]
         :rtype: [type]
         """        
+
+        assert end_time > start_time, "Invalid input - start_time is after end_time"
+
         if interval == 'minute':
             interval = dt.timedelta(minutes=1)
         # TODO other intervals
 
         with sqlite3.connect(PROJECT_DB_PATH) as conn:
+            print(queries.execute_sql(conn, queries.sql_get_ticker_contract_id.format(ticker=ticker))[0][0])
             contract_id = queries.execute_sql(conn, queries.sql_get_ticker_contract_id.format(ticker=ticker))[0][0]
 
             min_date_db = queries.execute_sql(conn, queries.sql_get_earliest_price_datetime_minute.format(ticker=ticker))
@@ -151,9 +153,11 @@ class Engine(IBKR):
 
         # if the database already contains enough data, pull directly from the database
         missing_beginning_data = \
-            (start_time < min_date_db and start_time >= min_date_db.replace(hour=9, minute=30)) or \
-            (start_time < min_date_db and start_time <= (min_date_db - dt.timedelta(days=1)).replace(hour=16))
-        missing_end_data = end_time > (max_date_db + interval)  # to account for non-inclusive IB API behaviour
+            (start_time < min_date_db and min_date_db > min_date_db.replace(hour=9, minute=30)) or \
+            (start_time < min_date_db and start_time < (min_date_db - dt.timedelta(days=1)).replace(hour=16, minute=0))
+        missing_end_data = \
+            (end_time > max_date_db and max_date_db < max_date_db.replace(hour=16, minute=0) - interval) or \
+            (end_time > max_date_db and end_time >= (max_date_db + dt.timedelta(days=1)).replace(hour=9, minute=30))
         
         dfs_to_concat = []
 

@@ -140,9 +140,22 @@ CREATE TABLE IF NOT EXISTS Price_History_Minute (
 CREATE_TABLE_STOCK_INDICES = """
 CREATE TABLE IF NOT EXISTS Stock_Indices (
                                     stock_id VARCHAR(16) NOT NULL,
+                                    reference_stock_id VARCHAR(16) NOT NULL,
                                     name TEXT NOT NULL,
                                     category TEXT NOT NULL,
-                                    weight DECIMAL NOT NULL
+                                    weight DECIMAL NOT NULL,
+                                    FOREIGN KEY (reference_stock_id) REFERENCES Stock (stock_id),
+                                    PRIMARY KEY (stock_id, reference_stock_id)
+                                    );
+"""
+
+CREATE_TABLE_PORTFOLIO_HOLDINGS_HISTORY = """
+CREATE TABLE IF NOT EXISTS Portfolio_Holdings_History (
+                                    date DATE NOT NULL,
+                                    stock_id VARCHAR(16) NOT NULL,
+                                    quantity INT NOT NULL,
+                                    FOREIGN KEY (stock_id) REFERENCES Stock (stock_id),
+                                    PRIMARY KEY (date, stock_id)
                                     );
 """
 
@@ -169,6 +182,7 @@ DB_TABLE_CREATION_SCRIPTS = [
     CREATE_TABLE_PRICE_HISTORY_HOUR,
     CREATE_TABLE_PRICE_HISTORY_MINUTE,
     CREATE_TABLE_STOCK_INDICES,
+    CREATE_TABLE_PORTFOLIO_HOLDINGS_HISTORY,
 ]
 
 
@@ -187,7 +201,7 @@ def db_creation_script(conn):
 
     conn.commit()
 
-    print("Transfering price history data from temporary database...\n") # convert to log
+    print("Transfering historic data from temporary database...\n") # convert to log
 
     temp_db_conn = sqlite3.connect(PROJECT_DB_PATH_TEMP)
     temp_db_c = temp_db_conn.cursor()
@@ -303,20 +317,21 @@ def insert_option(c, trade):
 
 
 def insert_dividend(c, dividend):
-    sql = """ INSERT INTO Dividend_History(dividend_id, stock_id, ex_date, pay_date, quantity, tax, amount, total, net_total)
-              VALUES(?,?,?,?,?,?,?,?,?) """
+    if dividend.code == 'Po':
+        sql = """ INSERT INTO Dividend_History(dividend_id, stock_id, ex_date, pay_date, quantity, tax, amount, total, net_total)
+                VALUES(?,?,?,?,?,?,?,?,?) """
 
-    params = (dividend.dividend_id, dividend.stock_id, dividend.ex_date, dividend.pay_date, dividend.quantity, dividend.tax, dividend.amount, dividend.total, dividend.net_total)
-    c.execute(sql, params)
+        params = (dividend.dividend_id, dividend.stock_id, dividend.ex_date, dividend.pay_date, dividend.quantity, dividend.tax, dividend.amount, dividend.total, dividend.net_total)
+        c.execute(sql, params)
 
-    print(
-        "Successfully parsed {symbol}'s dividend of {net_total} announced on {ex_date} to be paid on {pay_date}".format(
-                symbol=dividend.stock_id,
-                net_total=dividend.net_total,
-                ex_date=dividend.ex_date,
-                pay_date=dividend.pay_date,
-            )
-    ) # convert print statement to log
+        print(
+            "Successfully parsed {symbol}'s dividend of {net_total} announced on {ex_date} to be paid on {pay_date}".format(
+                    symbol=dividend.stock_id,
+                    net_total=dividend.net_total,
+                    ex_date=dividend.ex_date,
+                    pay_date=dividend.pay_date,
+                )
+        ) # convert print statement to log
 
 def insert_price_history(table_name, conn, prices_df):
     prices_df.to_sql(table_name, con=conn, if_exists='append', index=False)

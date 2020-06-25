@@ -59,10 +59,14 @@ class IBKR:
             schema.db_creation_script(self.conn)
 
         # get datetime of last trade
-        last_trade_datetime = datetime.datetime.strptime(
-            queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
-            '%Y-%m-%d %H:%M:%S'
-        )
+        try:
+            last_trade_datetime = datetime.datetime.strptime(
+                queries.execute_sql(self.conn, queries.sql_get_last_trade_datetime)[0][0], 
+                '%Y-%m-%d %H:%M:%S'
+            )
+        except IndexError:
+            last_trade_datetime = None
+
         try:
             doc = ET.parse(TRADELOG_PATH)
             tradelog_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
@@ -71,10 +75,14 @@ class IBKR:
             tradelog_datetime = None
 
         # get date of last dividend
-        last_dividend_date = datetime.datetime.strptime(
-            queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
-            '%Y-%m-%d'
-        )
+        try:
+            last_dividend_date = datetime.datetime.strptime(
+                queries.execute_sql(self.conn, queries.sql_get_last_dividend_datetime)[0][0],
+                '%Y-%m-%d'
+            )
+        except IndexError:
+            last_dividend_date = None
+
         try:
             doc = ET.parse(DIVIDEND_HISTORY_PATH)
             dividend_history_datetime_str = list(doc.iter('FlexStatement'))[0].attrib['whenGenerated']
@@ -120,6 +128,8 @@ class IBKR:
             print('Updating Dividend History...')
             self._update_dividend_history_db(last_updated=last_dividend_date)
         print('Dividend History is up-to-date\n')
+
+        self._compute_portfolio_holdings_history()
         
         print('IBKR Connection Successfully Established')
         print("-" * 40)
@@ -138,6 +148,10 @@ class IBKR:
         self.client.disconnect()
         self.connected = False
         print('Disconnected from IB TWS')
+
+    def _compute_portfolio_holdings_history(self):
+        pass
+        # TODO
 
     def query_flexreport(self, queryID, savepath):
         """

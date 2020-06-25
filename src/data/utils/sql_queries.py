@@ -77,6 +77,14 @@ sql_get_price_minute = """
     ORDER BY date DESC
 """
 
+sql_get_benchmark_tickers = """
+    SELECT *
+    FROM Stock_Indices
+    WHERE reference_stock_id = '{ticker}'
+    ORDER BY weight DESC
+    LIMIT {limit}
+"""
+
 def get_table_column_names(c, table_name):
     return [
         column[1] for column in c.execute(
