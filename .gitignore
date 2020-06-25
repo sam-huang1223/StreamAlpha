@@ -8,6 +8,7 @@ store/temp/**
 # don't track senstitive files
 credentials.ini
 **/*.db
+*.tlg
 
 # don't track these scratch files
 test.py

@@ -13,6 +13,7 @@ import pandas_market_calendars as mcal
 
 from numpy import busday_count, datetime64
 import datetime as dt
+import itertools as it
 
 from .data.IBKR import IBKR
 from .data.utils import sql_queries as queries
@@ -33,11 +34,11 @@ alternative data sources -> https://www.noeticoptions.com/ (track predictive pow
 #
 
 class Engine(IBKR):
-    def __init__(self, update_backsups=True):
+    def __init__(self, num_clients=32, update_backsups=True):
         """
         This class contains various methods th
         """
-        super(Engine, self).__init__(update_backsups)
+        super(Engine, self).__init__(num_clients, update_backsups)
 
         # ----------------------------- Define Constants ----------------------------- #
         # due to Interactive Broker's API being slow, these constants define "optimal"
@@ -103,6 +104,8 @@ class Engine(IBKR):
 
         now = dt.datetime.now()
 
+        # do async calls using up to 32 client IDs (generator?)
+
         dfs_to_concat = await asyncio.gather(
             *(
                 self.get_security_historical_price(
@@ -113,8 +116,9 @@ class Engine(IBKR):
                     useRTH=True, 
                     endDateTime=param['end'], 
                     startDateTime=param['start'],
-                    updateDB=True  # CHANGE
-                ) for param in params_list
+                    updateDB=False,  # CHANGE
+                    client=self.clients[idx]
+                ) for idx, param in enumerate(params_list)
             )
         )
 

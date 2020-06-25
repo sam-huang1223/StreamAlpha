@@ -30,13 +30,19 @@ DIVIDEND_HISTORY_FLEX_REPORT_ID = config['IB Flex Report IDs']['DIVIDEND_HISTORY
 # ---------------------------------------------------------------------------- #
 
 class IBKR:
-    def __init__(self, update_backups=False):
+    def __init__(self, num_clients, update_backups):
+        assert num_clients > 0 and num_clients <= 32, "num_clients must be between 1-32 (inclusive)"
+
         self.connected = False
         self.update_backups = update_backups
-        self._setup()
+        self._setup(num_clients)
 
-    def _setup(self):
+    def _setup(self, num_clients):
         print('Initializing IBKR Connection...\n')
+
+        self.clients = [
+            ib_insync.IB() for _ in range(num_clients)
+        ]
 
         # admin
         config = configparser.ConfigParser()
@@ -47,7 +53,7 @@ class IBKR:
         self.IBKR_FLEXREPORT_TOKEN = str(config['IB API']['IBKR_FLEXREPORT_TOKEN'])
 
         # initialize instance of client
-        self.client = ib_insync.IB()
+        self.client = self.clients[0]
 
         if PROJECT_DB_PATH:
             self.conn = sqlite3.connect(PROJECT_DB_PATH)
@@ -130,14 +136,16 @@ class IBKR:
             self.disconnect()
 
     def connect(self, read_only=True):
-        self.client.connect('127.0.0.1', 7496, clientId=1, readonly=read_only)
+        for idx, client in enumerate(self.clients):
+            client.connect('127.0.0.1', 7496, clientId=idx, readonly=read_only)
         self.connected = True
-        print('Connected to IB TWS')
+        print('Connected to IB TWS on {clients} clients'.format(clients=len(self.clients)))
 
     def disconnect(self):
-        self.client.disconnect()
+        for client in self.clients:
+            client.disconnect()
         self.connected = False
-        print('Disconnected from IB TWS')
+        print('Disconnected from IB TWS on {clients} clients'.format(clients=len(self.clients)))
 
     def query_flexreport(self, queryID, savepath):
         """
@@ -180,7 +188,7 @@ class IBKR:
 
         self.conn.commit()
 
-    async def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', startDateTime='', updateDB=True):
+    async def get_security_historical_price(self, contract_id, durationStr, barSizeSetting, whatToShow, useRTH, endDateTime='', startDateTime='', updateDB=True, client=None):
         """
 
         Note: cannot be used for expired options - alternative here (https://www.ivolatility.com/)
@@ -189,12 +197,15 @@ class IBKR:
 
         print('\t[IBKR] pulling historic price data for {days} trading days to {end}'.format(days=durationStr, end=endDateTime))
 
+        if not client:
+            client=self.client
+
         # create contract object uing the unique contract ID
         contract = ib_insync.Contract(conId = contract_id)
-        await self.client.qualifyContractsAsync(contract)
+        await client.qualifyContractsAsync(contract)
 
         # use the IBKR API to get historical data
-        bars = await self.client.reqHistoricalDataAsync(
+        bars = await client.reqHistoricalDataAsync(
             contract, endDateTime=endDateTime, durationStr=durationStr,
             barSizeSetting=barSizeSetting, whatToShow=whatToShow, useRTH=useRTH)
         
