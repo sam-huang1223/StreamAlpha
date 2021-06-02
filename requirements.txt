@@ -122,7 +122,7 @@ tornado==6.0.4
 typing-extensions==3.7.4.2
 tzlocal==1.5.1
 unicodecsv==0.14.1
-urllib3==1.25.9
+urllib3==1.26.5
 Werkzeug==0.16.1
 WTForms==2.3.1
 zict==2.0.0
